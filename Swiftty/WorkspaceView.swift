@@ -207,12 +207,15 @@ final class TerminalSession: ObservableObject, Identifiable {
       let commandToRun = cdArg.isEmpty ? "cd && pwd" : "cd \(cdArg) && pwd"
 
       Task.detached {
-        let resolved = resolvedOut.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !resolved.isEmpty {
-          await MainActor.run {
-            self.currentDirectory = resolved
-            self.title = TerminalSession.displayPath(resolved)
-            self.updateGitInfo()
+        let (resolvedOut, _, code, _) = self.runShellCommand(commandToRun, directory: dir)
+        if code == 0 {
+          let resolved = resolvedOut.trimmingCharacters(in: .whitespacesAndNewlines)
+          if !resolved.isEmpty {
+            await MainActor.run {
+              self.currentDirectory = resolved
+              self.title = TerminalSession.displayPath(resolved)
+              self.updateGitInfo()
+            }
           }
         }
       }
@@ -722,12 +725,14 @@ private struct CommandBlockView: View {
       if block.isRunning {
         elapsedDuration = 0.0
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
-          elapsedDuration = Date().timeIntervalSince(block.startTime)
-          if let view = block.handle.view {
-            let computedHeight = computeHeight(for: view)
-            // Only grow during running — never shrink, to prevent jumping
-            if computedHeight > terminalHeight {
-              terminalHeight = computedHeight
+          DispatchQueue.main.async {
+            elapsedDuration = Date().timeIntervalSince(block.startTime)
+            if let view = block.handle.view {
+              let computedHeight = computeHeight(for: view)
+              // Only grow during running — never shrink, to prevent jumping
+              if computedHeight > terminalHeight {
+                terminalHeight = computedHeight
+              }
             }
           }
         }
@@ -839,16 +844,18 @@ private func parseANSIText(_ text: String) -> Text {
     }
   }
 
-  return segments.reduce(Text("")) { combined, segment in
-    var segmentText = Text(segment.text)
+  var attributed = AttributedString()
+  for segment in segments {
+    var segmentAttr = AttributedString(segment.text)
     if let color = segment.color {
-      segmentText = segmentText.foregroundColor(color)
+      segmentAttr.foregroundColor = color
     } else {
-      segmentText = segmentText.foregroundColor(.swText)
+      segmentAttr.foregroundColor = .swText
     }
     if segment.isBold {
-      segmentText = segmentText.bold()
+      segmentAttr.inlinePresentationIntent = .stronglyEmphasized
     }
-    return combined + segmentText
+    attributed.append(segmentAttr)
   }
+  return Text(attributed)
 }
