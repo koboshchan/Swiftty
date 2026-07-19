@@ -256,7 +256,7 @@ struct CommandBlockView: View {
         topTrailing: topRadius
       )
       .stroke(
-        isSelected ? Color.swBlue.opacity(0.6) : (isHovered ? Color.swLine : Color.clear),
+        isSelected ? Color.accentColor.opacity(0.6) : (isHovered ? Color.swLine : Color.clear),
         lineWidth: isSelected ? 1.0 : 0.8
       )
     )

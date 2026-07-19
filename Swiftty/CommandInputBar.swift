@@ -46,7 +46,7 @@ struct CommandInputBar: View {
 
   private func suggestionInfo(for suggestion: String) -> (icon: String, typeText: String, color: Color) {
     if suggestion.hasSuffix("/") {
-      return ("folder.fill", "Folder", Color.swBlue)
+      return ("folder.fill", "Folder", Color.accentColor)
     } else if !suggestion.contains("/") && isSystemCommand(suggestion) {
       return ("terminal.fill", "Command", Color.swMint)
     } else {
@@ -80,7 +80,7 @@ struct CommandInputBar: View {
                   }
                   .padding(.horizontal, 10)
                   .padding(.vertical, 6)
-                  .background(isSelected ? Color.swBlue : Color.clear)
+                  .background(isSelected ? Color.accentColor : Color.clear)
                   .foregroundStyle(isSelected ? Color.white : Color.swText)
                   .cornerRadius(8)
                 }
@@ -137,7 +137,7 @@ struct CommandInputBar: View {
                   }
                   .padding(.horizontal, 10)
                   .padding(.vertical, 6)
-                  .background(isSelected ? Color.swBlue : Color.clear)
+                  .background(isSelected ? Color.accentColor : Color.clear)
                   .foregroundStyle(isSelected ? Color.white : Color.swText)
                   .cornerRadius(8)
                 }
