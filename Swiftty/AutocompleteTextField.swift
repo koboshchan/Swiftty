@@ -69,6 +69,8 @@ struct AutocompleteTextField: NSViewRepresentable {
       }
     }
     
+    nsView.placeholderString = text.isEmpty ? placeholder : ""
+    
     context.coordinator.adjustHeight(for: nsView)
     
     if isFocused {
@@ -124,6 +126,7 @@ struct AutocompleteTextField: NSViewRepresentable {
     func controlTextDidChange(_ obj: Notification) {
       if let textField = obj.object as? NSTextField {
         parent.text = textField.stringValue
+        textField.placeholderString = textField.stringValue.isEmpty ? parent.placeholder : ""
         parent.session.originalAutocompleteText = nil
         parent.session.selectedSuggestionIndex = nil
         parent.session.autocompleteTabCount = 0

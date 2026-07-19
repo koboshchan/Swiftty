@@ -35,66 +35,106 @@ struct CommandBlockView: View {
     if block.isRunning {
       return true
     }
-    guard let view = block.handle.view else { return false }
-    let output = getAllOutput(for: view).trimmingCharacters(in: .whitespacesAndNewlines)
-    return !output.isEmpty
+    if let staticOutput = block.staticOutput {
+      let str = String(staticOutput.characters)
+      return !str.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    return false
+  }
+
+  private func getSelectedBlocks() -> [CommandBlock] {
+    if session.selectedBlockIDs.contains(block.id) {
+      return session.blocks.filter { session.selectedBlockIDs.contains($0.id) }
+    } else {
+      return [block]
+    }
   }
 
   // MARK: Context menu items (shared by right-click and 3-dots button)
   @ViewBuilder
   private func blockContextMenu() -> some View {
-    Button("Copy") {
-      let cmd = block.command
-      let output = block.handle.view.map { getAllOutput(for: $0) } ?? ""
-      let full = output.isEmpty ? cmd : "\(cmd)\n\(output)"
+    let targetBlocks = getSelectedBlocks()
+    let isPlural = targetBlocks.count > 1
+
+    Button(isPlural ? "Copy Blocks" : "Copy") {
+      var lines: [String] = []
+      for b in targetBlocks {
+        let cmd = b.command
+        let output: String
+        if b.isRunning, let view = b.handle.view {
+          output = getAllOutput(for: view)
+        } else {
+          output = b.staticOutput.map { String($0.characters) } ?? ""
+        }
+        let trimmedOut = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        let full = trimmedOut.isEmpty ? cmd : "\(cmd)\n\(trimmedOut)"
+        lines.append(full)
+      }
+      let fullText = lines.joined(separator: "\n\n")
       NSPasteboard.general.clearContents()
-      NSPasteboard.general.setString(full, forType: .string)
+      NSPasteboard.general.setString(fullText, forType: .string)
     }
-    Button("Copy Command") {
+    Button(isPlural ? "Copy Commands" : "Copy Command") {
+      let cmds = targetBlocks.map { $0.command }.joined(separator: "\n")
       NSPasteboard.general.clearContents()
-      NSPasteboard.general.setString(block.command, forType: .string)
+      NSPasteboard.general.setString(cmds, forType: .string)
     }
-    Button("Copy Output") {
-      let output = block.handle.view.map { getAllOutput(for: $0) } ?? ""
+    Button(isPlural ? "Copy Outputs" : "Copy Output") {
+      var outputs: [String] = []
+      for b in targetBlocks {
+        let output: String
+        if b.isRunning, let view = b.handle.view {
+          output = getAllOutput(for: view)
+        } else {
+          output = b.staticOutput.map { String($0.characters) } ?? ""
+        }
+        outputs.append(output)
+      }
+      let fullOutputs = outputs.joined(separator: "\n\n")
       NSPasteboard.general.clearContents()
-      NSPasteboard.general.setString(output, forType: .string)
+      NSPasteboard.general.setString(fullOutputs, forType: .string)
     }
-    Button("Copy Working Directory") {
+    Button(isPlural ? "Copy Working Directories" : "Copy Working Directory") {
+      let dirs = Array(Set(targetBlocks.map { $0.directory })).sorted().joined(separator: "\n")
       NSPasteboard.general.clearContents()
-      NSPasteboard.general.setString(block.directory, forType: .string)
+      NSPasteboard.general.setString(dirs, forType: .string)
     }
-    if let git = block.gitInfo {
+    if !isPlural, let git = block.gitInfo {
       Button("Copy Git Branch") {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(git.branch, forType: .string)
       }
     }
     Divider()
-    Button("Find Within Block") {
-      withAnimation(.easeOut(duration: 0.15)) {
-        setFilterActive(true)
+    if !isPlural {
+      Button("Find Within Block") {
+        withAnimation(.easeOut(duration: 0.15)) {
+          setFilterActive(true)
+        }
       }
+      Divider()
+      Button("Scroll to Top of Block") {
+        session.scrollToBlockID = ScrollToBlock(id: block.id, anchor: .top)
+      }
+      Button("Scroll to Bottom of Block") {
+        session.scrollToBlockID = ScrollToBlock(id: block.id, anchor: .bottom)
+      }
+      Divider()
+      Button("Re-run Command") {
+        session.runCommand(block.command)
+      }
+      Divider()
     }
-    Divider()
-    Button("Scroll to Top of Block") {
-      session.scrollToBlockID = ScrollToBlock(id: block.id, anchor: .top)
-    }
-    Button("Scroll to Bottom of Block") {
-      session.scrollToBlockID = ScrollToBlock(id: block.id, anchor: .bottom)
-    }
-    Divider()
-    Button("Re-run Command") {
-      session.runCommand(block.command)
-    }
-    Divider()
     Button("Clear Blocks") {
       session.blocks.removeAll()
       session.selectedBlockIDs.removeAll()
     }
-    Button("Delete Block", role: .destructive) {
-      session.selectedBlockIDs.remove(block.id)
-      if let idx = session.blocks.firstIndex(where: { $0.id == block.id }) {
-        session.blocks.remove(at: idx)
+    Button(isPlural ? "Delete Blocks" : "Delete Block", role: .destructive) {
+      for b in targetBlocks {
+        session.selectedBlockIDs.remove(b.id)
+        if let idx = session.blocks.firstIndex(where: { $0.id == b.id }) {
+          session.blocks.remove(at: idx)
+        }
       }
     }
   }
@@ -229,7 +269,7 @@ struct CommandBlockView: View {
           }
         }
       } else {
-        if hasOutput {
+        if block.isRunning {
           TerminalSurface(
             currentDirectory: block.directory,
             command: block.command,
@@ -244,6 +284,13 @@ struct CommandBlockView: View {
           }
           .frame(height: terminalHeight)
           .cornerRadius(8)
+        } else if hasOutput, let staticOutput = block.staticOutput {
+          Text(staticOutput)
+            .font(.system(size: 12, design: .monospaced))
+            .lineSpacing(4)
+            .textSelection(.enabled)
+            .foregroundStyle(Color.swText)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
       }
     }
