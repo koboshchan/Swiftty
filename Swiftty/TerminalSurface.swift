@@ -4,8 +4,6 @@ import SwiftTerm
 import SwiftUI
 
 final class SwifttyTerminalView: LocalProcessTerminalView {
-  private var configuredMetal = false
-
   /// Computes the cell height from the terminal font metrics so the host
   /// can build accurate content-based frame sizes.
   var cellHeight: CGFloat {
@@ -27,8 +25,6 @@ final class SwifttyTerminalView: LocalProcessTerminalView {
   override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
 
-    guard window != nil, !configuredMetal else { return }
-    configuredMetal = (try? setUseMetal(true)) != nil
     DispatchQueue.main.async { [weak self] in
       guard let self, let window = self.window else { return }
       window.makeFirstResponder(self)

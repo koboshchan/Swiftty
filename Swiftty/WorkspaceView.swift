@@ -66,6 +66,7 @@ final class TerminalSession: ObservableObject, Identifiable {
 
   @Published var blocks: [CommandBlock] = []
   @Published var gitInfo: GitInfo? = nil
+  @Published var scrollTrigger = UUID()
 
   init(currentDirectory: String, ordinal: Int) {
     self.currentDirectory = currentDirectory
@@ -202,7 +203,17 @@ final class TerminalSession: ObservableObject, Identifiable {
     )
     self.blocks.append(runningBlock)
 
-    if trimmed.hasPrefix("cd") {
+    let isSimpleCd = trimmed == "cd" || (
+      trimmed.hasPrefix("cd ") &&
+      !trimmed.contains("&&") &&
+      !trimmed.contains(";") &&
+      !trimmed.contains("|") &&
+      !trimmed.contains("\n") &&
+      !trimmed.contains("`") &&
+      !trimmed.contains("$(")
+    )
+
+    if isSimpleCd {
       let cdArg = trimmed.dropFirst(2).trimmingCharacters(in: .whitespacesAndNewlines)
       let commandToRun = cdArg.isEmpty ? "cd && pwd" : "cd \(cdArg) && pwd"
 
@@ -430,7 +441,7 @@ private struct SessionWorkspaceView: View {
     GeometryReader { geometry in
       ScrollViewReader { proxy in
         ScrollView {
-          LazyVStack(spacing: 8) {
+          VStack(spacing: 8) {
             Spacer()
             ForEach(session.blocks) { block in
               CommandBlockView(block: block, session: session)
@@ -443,6 +454,13 @@ private struct SessionWorkspaceView: View {
         .onChange(of: session.blocks) { oldValue, newValue in
           if let lastBlock = newValue.last {
             withAnimation(.easeOut(duration: 0.2)) {
+              proxy.scrollTo(lastBlock.id, anchor: .bottom)
+            }
+          }
+        }
+        .onChange(of: session.scrollTrigger) { oldValue, newValue in
+          if let lastBlock = session.blocks.last {
+            withAnimation(.easeOut(duration: 0.15)) {
               proxy.scrollTo(lastBlock.id, anchor: .bottom)
             }
           }
@@ -500,7 +518,7 @@ private struct CommandInputBar: View {
   @ObservedObject var session: TerminalSession
   let submit: () -> Void
 
-  @FocusState private var isFocused: Bool
+  @State private var isFieldFocused = true
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -526,12 +544,14 @@ private struct CommandInputBar: View {
         .padding(.top, 12)
 
         HStack(spacing: 10) {
-          TextField("Run a command...", text: $commandText)
-            .textFieldStyle(.plain)
-            .font(.system(size: 14, weight: .regular, design: .monospaced))
-            .foregroundStyle(Color.swText)
-            .focused($isFocused)
-            .onSubmit(submit)
+          AutocompleteTextField(
+            text: $commandText,
+            placeholder: "Run a command...",
+            currentDirectory: session.currentDirectory,
+            isFocused: isFieldFocused,
+            onSubmit: submit
+          )
+          .frame(height: 22)
 
           Button(action: submit) {
             Image(systemName: "return")
@@ -563,17 +583,21 @@ private struct CommandInputBar: View {
       .background(Color.swPanel)
     }
     .onAppear {
+      isFieldFocused = false
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-        isFocused = true
+        isFieldFocused = true
       }
     }
     .onChange(of: session.id) { _, _ in
-      isFocused = true
+      isFieldFocused = false
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+        isFieldFocused = true
+      }
     }
     .onChange(of: session.blocks.count) { _, _ in
-      // Re-focus when blocks change (command finishes, input bar reappears)
+      isFieldFocused = false
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-        isFocused = true
+        isFieldFocused = true
       }
     }
   }
@@ -632,10 +656,8 @@ private struct CommandBlockView: View {
   @State private var elapsedDuration: Double = 0.0
   @State private var timer: Timer? = nil
   @State private var terminalHeight: CGFloat = 30
-
-  /// Fixed large size for the underlying NSView so SwiftTerm always has
-  /// enough rows and never resizes away content.
-  private let terminalViewHeight: CGFloat = 2000
+  @State private var filterText = ""
+  @State private var isFilterActive = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
@@ -677,34 +699,117 @@ private struct CommandBlockView: View {
               NSPasteboard.general.clearContents()
               NSPasteboard.general.setString(block.command, forType: .string)
             }
-            SmallIconButton(systemName: "line.3.horizontal.decrease.circle", help: "Filter output")
-            {}
-            SmallIconButton(systemName: "ellipsis", help: "More options") {}
+            
+            SmallIconButton(
+              systemName: "line.3.horizontal.decrease.circle",
+              help: "Filter output",
+              tint: isFilterActive ? .swMint : .swMuted
+            ) {
+              withAnimation(.easeOut(duration: 0.15)) {
+                isFilterActive.toggle()
+                if !isFilterActive {
+                  filterText = ""
+                }
+              }
+            }
+
+            Menu {
+              Button("Copy Output") {
+                if let view = block.handle.view {
+                  let text = getAllOutput(for: view)
+                  NSPasteboard.general.clearContents()
+                  NSPasteboard.general.setString(text, forType: .string)
+                }
+              }
+              Button("Copy Command") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(block.command, forType: .string)
+              }
+              Button("Re-run Command") {
+                session.runCommand(block.command)
+              }
+              Divider()
+              Button("Delete Block", role: .destructive) {
+                if let idx = session.blocks.firstIndex(where: { $0.id == block.id }) {
+                  session.blocks.remove(at: idx)
+                }
+              }
+            } label: {
+              Image(systemName: "ellipsis")
+                .font(.system(size: 12, weight: .medium))
+                .frame(width: 25, height: 25)
+                .foregroundStyle(Color.swMuted)
+                .contentShape(Rectangle())
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
           }
           .transition(.opacity)
         }
       }
       .frame(height: 20)
 
+      if isFilterActive {
+        HStack(spacing: 8) {
+          Image(systemName: "line.3.horizontal.decrease.circle")
+            .font(.system(size: 11))
+            .foregroundStyle(Color.swMuted)
+          TextField("Filter output...", text: $filterText)
+            .textFieldStyle(.plain)
+            .font(.system(size: 11, design: .monospaced))
+            .foregroundStyle(Color.swText)
+          
+          if !filterText.isEmpty {
+            Button(action: { filterText = "" }) {
+              Image(systemName: "xmark.circle.fill")
+                .foregroundStyle(Color.swMuted)
+            }
+            .buttonStyle(.plain)
+          }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Color.swPanel, in: RoundedRectangle(cornerRadius: 4))
+        .padding(.bottom, 4)
+      }
+
       Text(block.command)
         .font(.system(size: 13.5, weight: .bold, design: .monospaced))
         .foregroundStyle(block.isError ? Color.swCoral : Color.swMint)
         .padding(.bottom, 2)
 
-      // The TerminalSurface NSView is kept at a fixed large height so
-      // SwiftTerm never resizes its row count and loses content.
-      // A clipping frame controls how much is visible in the layout.
-      TerminalSurface(
-        currentDirectory: block.directory,
-        command: block.command,
-        handle: block.handle
-      ) { exitCode in
-        session.processTerminated(blockID: block.id, exitCode: exitCode)
+      if isFilterActive && !filterText.isEmpty {
+        if let view = block.handle.view {
+          let filtered = getFilteredOutput(for: view, query: filterText)
+          if filtered.isEmpty {
+            Text("No matches found")
+              .font(.system(size: 12, design: .monospaced))
+              .foregroundStyle(Color.swMuted)
+              .padding(.vertical, 8)
+              .frame(maxWidth: .infinity, alignment: .leading)
+          } else {
+            ScrollView(.horizontal) {
+              Text(filtered)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(Color.swText)
+                .lineSpacing(4)
+                .textSelection(.enabled)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxHeight: 300)
+          }
+        }
+      } else {
+        TerminalSurface(
+          currentDirectory: block.directory,
+          command: block.command,
+          handle: block.handle
+        ) { exitCode in
+          session.processTerminated(blockID: block.id, exitCode: exitCode)
+        }
+        .frame(height: terminalHeight)
+        .cornerRadius(4)
       }
-      .frame(height: terminalViewHeight)
-      .frame(height: terminalHeight, alignment: .top)
-      .clipped()
-      .cornerRadius(4)
     }
     .padding(.horizontal, 20)
     .padding(.vertical, 14)
@@ -732,6 +837,7 @@ private struct CommandBlockView: View {
               // Only grow during running — never shrink, to prevent jumping
               if computedHeight > terminalHeight {
                 terminalHeight = computedHeight
+                session.scrollTrigger = UUID()
               }
             }
           }
@@ -741,6 +847,7 @@ private struct CommandBlockView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
           if let view = block.handle.view {
             terminalHeight = computeHeight(for: view)
+            session.scrollTrigger = UUID()
           }
         }
       }
@@ -754,6 +861,7 @@ private struct CommandBlockView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
           if let view = block.handle.view {
             terminalHeight = computeHeight(for: view)
+            session.scrollTrigger = UUID()
           }
         }
       }
@@ -762,13 +870,19 @@ private struct CommandBlockView: View {
   }
 
   private func computeHeight(for view: SwifttyTerminalView) -> CGFloat {
-    let rows = view.terminal.rows
     let ch = view.cellHeight
+    guard let terminal = view.terminal else { return ch }
+    let buffer = terminal.buffer
+    let linesTop = buffer.totalLinesTrimmed
 
-    // Scan from bottom to find last row with visible (non-whitespace) content
-    var lastUsedRow = 0
-    for r in stride(from: rows - 1, through: 0, by: -1) {
-      if let line = view.terminal.getLine(row: r) {
+    var totalLines = linesTop
+    while terminal.getScrollInvariantLine(row: totalLines) != nil {
+      totalLines += 1
+    }
+
+    var lastUsedRow = linesTop
+    for r in stride(from: totalLines - 1, through: linesTop, by: -1) {
+      if let line = terminal.getScrollInvariantLine(row: r) {
         let text = line.translateToString(trimRight: true)
         if !text.isEmpty {
           lastUsedRow = r
@@ -777,11 +891,50 @@ private struct CommandBlockView: View {
       }
     }
 
-    // Also consider cursor position — some commands leave the cursor
-    // one row past the last output line
-    let cursorRow = view.terminal.buffer.y
-    let contentRows = max(lastUsedRow + 1, min(cursorRow, lastUsedRow + 2))
+    let cursorRow = linesTop + buffer.yDisp + buffer.y
+    let contentRows = max(lastUsedRow - linesTop + 1, cursorRow - linesTop + 1)
     return max(CGFloat(contentRows) * ch, ch)
+  }
+
+  private func getFilteredOutput(for view: SwifttyTerminalView, query: String) -> String {
+    guard let terminal = view.terminal else { return "" }
+    let buffer = terminal.buffer
+    let linesTop = buffer.totalLinesTrimmed
+    
+    var totalLines = linesTop
+    while terminal.getScrollInvariantLine(row: totalLines) != nil {
+      totalLines += 1
+    }
+    
+    var matchingLines: [String] = []
+    for r in linesTop..<totalLines {
+      if let line = terminal.getScrollInvariantLine(row: r) {
+        let text = line.translateToString(trimRight: true)
+        if text.localizedCaseInsensitiveContains(query) {
+          matchingLines.append(text)
+        }
+      }
+    }
+    return matchingLines.joined(separator: "\n")
+  }
+
+  private func getAllOutput(for view: SwifttyTerminalView) -> String {
+    guard let terminal = view.terminal else { return "" }
+    let buffer = terminal.buffer
+    let linesTop = buffer.totalLinesTrimmed
+    
+    var totalLines = linesTop
+    while terminal.getScrollInvariantLine(row: totalLines) != nil {
+      totalLines += 1
+    }
+    
+    var allLines: [String] = []
+    for r in linesTop..<totalLines {
+      if let line = terminal.getScrollInvariantLine(row: r) {
+        allLines.append(line.translateToString(trimRight: true))
+      }
+    }
+    return allLines.joined(separator: "\n")
   }
 }
 
@@ -859,3 +1012,142 @@ private func parseANSIText(_ text: String) -> Text {
   }
   return Text(attributed)
 }
+
+struct AutocompleteTextField: NSViewRepresentable {
+  @Binding var text: String
+  let placeholder: String
+  let currentDirectory: String
+  var isFocused: Bool
+  let onSubmit: () -> Void
+
+  func makeNSView(context: Context) -> NSTextField {
+    let textField = NSTextField()
+    textField.placeholderString = placeholder
+    textField.isBordered = false
+    textField.drawsBackground = false
+    textField.focusRingType = .none
+    textField.font = NSFont.monospacedSystemFont(ofSize: 14.0, weight: .regular)
+    textField.textColor = NSColor(red: 0xD6/255, green: 0xD6/255, blue: 0xD6/255, alpha: 1)
+    textField.delegate = context.coordinator
+    return textField
+  }
+
+  func updateNSView(_ nsView: NSTextField, context: Context) {
+    if nsView.stringValue != text {
+      nsView.stringValue = text
+    }
+    if isFocused {
+      DispatchQueue.main.async {
+        if nsView.window != nil && nsView.window?.firstResponder != nsView.currentEditor() {
+          nsView.window?.makeFirstResponder(nsView)
+        }
+      }
+    }
+  }
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator(self)
+  }
+
+  class Coordinator: NSObject, NSTextFieldDelegate {
+    var parent: AutocompleteTextField
+
+    init(_ parent: AutocompleteTextField) {
+      self.parent = parent
+    }
+
+    func controlTextDidChange(_ obj: Notification) {
+      if let textField = obj.object as? NSTextField {
+        parent.text = textField.stringValue
+      }
+    }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+      if commandSelector == #selector(NSResponder.insertTab(_:)) {
+        let completed = autocomplete(text: parent.text, currentDirectory: parent.currentDirectory)
+        parent.text = completed
+        if let textField = control as? NSTextField {
+          textField.stringValue = completed
+          if let textEditor = textField.currentEditor() {
+            textEditor.selectedRange = NSRange(location: completed.count, length: 0)
+          }
+        }
+        return true
+      } else if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+        parent.onSubmit()
+        return true
+      }
+      return false
+    }
+
+    private func autocomplete(text: String, currentDirectory: String) -> String {
+      let components = text.components(separatedBy: " ")
+      guard let last = components.last, !last.isEmpty else { return text }
+      
+      let fileManager = FileManager.default
+      let searchDir: String
+      let searchPrefix: String
+      
+      if last.contains("/") {
+        let url = URL(fileURLWithPath: last, relativeTo: URL(fileURLWithPath: currentDirectory))
+        let parentURL = url.deletingLastPathComponent()
+        searchDir = parentURL.path
+        searchPrefix = url.lastPathComponent
+      } else {
+        searchDir = currentDirectory
+        searchPrefix = last
+      }
+      
+      do {
+        let contents = try fileManager.contentsOfDirectory(atPath: searchDir)
+        let matches = contents.filter { $0.lowercased().hasPrefix(searchPrefix.lowercased()) }
+        
+        if matches.count == 1 {
+          let match = matches[0]
+          let fullPath = URL(fileURLWithPath: searchDir).appendingPathComponent(match).path
+          var isDir: ObjCBool = false
+          let exists = fileManager.fileExists(atPath: fullPath, isDirectory: &isDir)
+          let suffix = (exists && isDir.boolValue) ? "/" : " "
+          
+          var newComponents = components
+          if last.contains("/") {
+            let pathComponents = last.components(separatedBy: "/")
+            let completedPath = pathComponents.dropLast().joined(separator: "/") + "/" + match + suffix
+            newComponents[newComponents.count - 1] = completedPath
+          } else {
+            newComponents[newComponents.count - 1] = match + suffix
+          }
+          return newComponents.joined(separator: " ")
+        } else if matches.count > 1 {
+          let sorted = matches.sorted()
+          let first = sorted.first!
+          let lastMatch = sorted.last!
+          var common = ""
+          for (c1, c2) in zip(first, lastMatch) {
+            if c1 == c2 {
+              common.append(c1)
+            } else {
+              break
+            }
+          }
+          
+          if common.count > searchPrefix.count {
+            var newComponents = components
+            if last.contains("/") {
+              let pathComponents = last.components(separatedBy: "/")
+              let completedPath = pathComponents.dropLast().joined(separator: "/") + "/" + common
+              newComponents[newComponents.count - 1] = completedPath
+            } else {
+              newComponents[newComponents.count - 1] = common
+            }
+            return newComponents.joined(separator: " ")
+          }
+        }
+      } catch {
+        // Ignore
+      }
+      return text
+    }
+  }
+}
+
