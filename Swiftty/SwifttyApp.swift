@@ -9,6 +9,5 @@ struct SwifttyApp: App {
     }
     .defaultSize(width: 1_520, height: 920)
     .windowResizability(.contentSize)
-    .windowStyle(.hiddenTitleBar)
   }
 }

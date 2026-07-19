@@ -164,27 +164,11 @@ struct CommandBlockView: View {
       .frame(height: 20)
 
       if isFilterActive {
-        HStack(spacing: 8) {
-          Image(systemName: "line.3.horizontal.decrease.circle")
-            .font(.system(size: 11))
-            .foregroundStyle(Color.swMuted)
-          TextField("Filter output...", text: $filterText)
-            .textFieldStyle(.plain)
-            .font(.system(size: 11, design: .monospaced))
-            .foregroundStyle(Color.swText)
-          
-          if !filterText.isEmpty {
-            Button(action: { filterText = "" }) {
-              Image(systemName: "xmark.circle.fill")
-                .foregroundStyle(Color.swMuted)
-            }
-            .buttonStyle(.plain)
-          }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(Color.swPanel, in: RoundedRectangle(cornerRadius: 4))
-        .padding(.bottom, 4)
+        TextField("Filter output...", text: $filterText)
+          .textFieldStyle(.roundedBorder)
+          .font(.system(size: 11, design: .monospaced))
+          .frame(maxWidth: 300)
+          .padding(.bottom, 4)
       }
 
       Text(block.command)

@@ -20,29 +20,23 @@ struct WorkspaceView: View {
   }
 
   var body: some View {
-    HStack(spacing: 0) {
+    NavigationSplitView {
       SessionSidebar(
         sessions: sessionStore.sessions,
         selectedID: $sessionStore.selectedID,
         searchText: $sidebarSearch,
         onNewSession: sessionStore.addSession
       )
-      .frame(width: 326)
-
-      Rectangle()
-        .fill(Color.swLine)
-        .frame(width: 1)
-
+      .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 360)
+    } detail: {
       TerminalWorkspace(
         sessions: sessionStore.sessions,
         selectedID: sessionStore.selectedID,
         commandText: $commandText
       )
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     .frame(minWidth: 1_000, minHeight: 700)
     .background(Color.swCanvas)
-    .ignoresSafeArea(.container, edges: .bottom)
   }
 }
 
@@ -61,119 +55,51 @@ private struct SessionSidebar: View {
   }
 
   var body: some View {
-    VStack(spacing: 0) {
-      GlassEffectContainer(spacing: 8) {
-        HStack(spacing: 10) {
-          HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-              .font(.system(size: 13, weight: .medium))
-              .foregroundStyle(Color.swMuted)
-            TextField("Search tabs...", text: $searchText)
-              .textFieldStyle(.plain)
-              .font(.system(size: 13, weight: .regular, design: .rounded))
-              .foregroundStyle(Color.swText)
-          }
-          .padding(.horizontal, 11)
-          .frame(height: 34)
-          .glassEffect(.clear, in: .rect(cornerRadius: 8))
-
-          SmallIconButton(systemName: "slider.horizontal.3", help: "Filter tabs") {}
-          SmallIconButton(
-            systemName: "plus", help: "New terminal", tint: .swText, action: onNewSession)
+    List(filteredSessions, selection: $selectedID) { session in
+      SessionRow(session: session)
+        .tag(session.id)
+    }
+    .listStyle(.sidebar)
+    .searchable(text: $searchText, placement: .sidebar, prompt: "Search tabs...")
+    .toolbar {
+      ToolbarItem(placement: .primaryAction) {
+        Button(action: onNewSession) {
+          Label("New Terminal", systemImage: "plus")
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 10)
-        .padding(.bottom, 8)
-      }
-      .background(Color.swSidebar)
-
-      Rectangle()
-        .fill(Color.swLine)
-        .frame(height: 1)
-
-      if filteredSessions.isEmpty {
-        VStack(spacing: 9) {
-          Image(systemName: "magnifyingglass")
-            .foregroundStyle(Color.swDim)
-          Text("No sessions")
-            .font(.system(size: 12, weight: .medium, design: .rounded))
-            .foregroundStyle(Color.swMuted)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-      } else {
-        ScrollView {
-          LazyVStack(spacing: 0) {
-            ForEach(filteredSessions) { session in
-              SessionRow(
-                session: session,
-                selected: selectedID == session.id
-              ) {
-                selectedID = session.id
-              }
-            }
-          }
-        }
-        .scrollIndicators(.hidden)
+        .help("New Terminal")
       }
     }
-    .background(Color.swSidebar)
   }
 }
 
 private struct SessionRow: View {
   @ObservedObject var session: TerminalSession
-  let selected: Bool
-  let action: () -> Void
 
   var body: some View {
-    Button(action: action) {
-      HStack(spacing: 13) {
-        ZStack {
-          Circle()
-            .fill(selected ? Color.swRaised : Color(hex: 0x202020))
-          Text(">_")
-            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-            .foregroundStyle(selected ? Color.swMint : Color.swMuted)
-        }
-        .frame(width: 32, height: 32)
-
-        VStack(alignment: .leading, spacing: 4) {
-          Text(session.title)
-            .font(.system(size: 13, weight: selected ? .medium : .regular, design: .monospaced))
-            .foregroundStyle(selected ? Color.swText : Color.swMuted)
-            .lineLimit(1)
-          Text(session.subtitle)
-            .font(.system(size: 11, weight: .regular, design: .monospaced))
-            .foregroundStyle(selected ? Color.swMuted : Color.swDim)
-            .lineLimit(1)
-        }
-
-        Spacer(minLength: 0)
+    HStack(spacing: 12) {
+      ZStack {
+        Circle()
+          .fill(Color.swRaised)
+        Text(">_")
+          .font(.system(size: 11, weight: .bold, design: .monospaced))
+          .foregroundStyle(Color.swMint)
       }
-      .padding(.horizontal, 22)
-      .frame(height: 76)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(selected ? Color.swRaised.opacity(0.58) : .clear)
-      .overlay(alignment: .bottom) {
-        Rectangle()
-          .fill(Color.swLine.opacity(selected ? 0.8 : 0.55))
-          .frame(height: 1)
-      }
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .ifSelectedGlass(selected)
-  }
-}
+      .frame(width: 28, height: 28)
 
-extension View {
-  @ViewBuilder
-  fileprivate func ifSelectedGlass(_ selected: Bool) -> some View {
-    if selected {
-      self.glassEffect(.regular.tint(Color.white.opacity(0.025)), in: .rect(cornerRadius: 8))
-    } else {
-      self
+      VStack(alignment: .leading, spacing: 3) {
+        Text(session.title)
+          .font(.system(size: 13, weight: .semibold, design: .monospaced))
+          .foregroundStyle(Color.primary)
+          .lineLimit(1)
+        Text(session.subtitle)
+          .font(.system(size: 11, design: .monospaced))
+          .foregroundStyle(Color.secondary)
+          .lineLimit(1)
+      }
+      Spacer(minLength: 0)
     }
+    .padding(.vertical, 6)
+    .contentShape(Rectangle())
   }
 }
 
