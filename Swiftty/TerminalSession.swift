@@ -268,11 +268,27 @@ final class TerminalSession: ObservableObject, Identifiable {
     
     if let terminal = persistentTerminalView?.terminal {
       let buffer = terminal.buffer
-      var startL = buffer.totalLinesTrimmed
-      while terminal.getScrollInvariantLine(row: startL) != nil {
-        startL += 1
+      var totalLines = buffer.totalLinesTrimmed
+      while terminal.getScrollInvariantLine(row: totalLines) != nil {
+        totalLines += 1
       }
-      commandStartLine = startL
+      
+      var lastDelimiterLine = -1
+      for r in stride(from: totalLines - 1, through: buffer.totalLinesTrimmed, by: -1) {
+        if let line = terminal.getScrollInvariantLine(row: r) {
+          let text = line.translateToString(trimRight: true)
+          if text.contains("[Swiftty-Command-Done:") {
+            lastDelimiterLine = r
+            break
+          }
+        }
+      }
+      
+      if lastDelimiterLine != -1 {
+        commandStartLine = lastDelimiterLine + 1
+      } else {
+        commandStartLine = totalLines
+      }
     } else {
       commandStartLine = 0
     }
