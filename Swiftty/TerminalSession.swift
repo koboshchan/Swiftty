@@ -85,7 +85,6 @@ final class TerminalSession: ObservableObject, Identifiable {
   @Published var historySuggestions: [String] = []
   @Published var isHistoryOpen: Bool = false
   @Published var selectedHistoryIndex: Int? = nil
-  @Published var historyTab: String = "All"
 
   func clearAllTextSelections() {
     for block in blocks {

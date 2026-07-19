@@ -166,13 +166,8 @@ struct AutocompleteTextField: NSViewRepresentable {
          commandSelector == Selector(("insertBacktab:")) ||
          commandSelector == Selector(("insertTabIgnoringFieldEditor:")) {
         if session.isHistoryOpen {
-          // Cycle history tabs
-          let tabs = ["All", "Commands", "Prompts"]
-          if let idx = tabs.firstIndex(of: session.historyTab) {
-            let isShift = NSEvent.modifierFlags.contains(.shift)
-            let nextIdx = isShift ? (idx - 1 + tabs.count) % tabs.count : (idx + 1) % tabs.count
-            session.historyTab = tabs[nextIdx]
-          }
+          let isShift = NSEvent.modifierFlags.contains(.shift)
+          navigateHistory(isForward: !isShift)
         } else {
           handleTabOrNavigation(textField: textField, isForward: true)
         }

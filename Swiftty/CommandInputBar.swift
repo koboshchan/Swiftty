@@ -102,25 +102,11 @@ struct CommandInputBar: View {
       // History Popup Panel
       if session.isHistoryOpen && !session.historySuggestions.isEmpty {
         VStack(alignment: .leading, spacing: 0) {
-          // Tab bar header
+          // Header
           HStack(spacing: 16) {
-            Text("HISTORY")
+            Text("COMMAND HISTORY")
               .font(.system(size: 11, weight: .bold))
               .foregroundStyle(Color.swMuted)
-            
-            ForEach(["All", "Commands", "Prompts"], id: \.self) { tab in
-              let isSelected = session.historyTab == tab
-              Button(action: { session.historyTab = tab }) {
-                Text(tab)
-                  .font(.system(size: 11, weight: isSelected ? .bold : .regular))
-                  .foregroundStyle(isSelected ? Color.swText : Color.swMuted)
-                  .padding(.horizontal, 8)
-                  .padding(.vertical, 3)
-                  .background(isSelected ? Color.swRaised.opacity(0.4) : Color.clear)
-                  .cornerRadius(8)
-              }
-              .buttonStyle(.plain)
-            }
             Spacer()
           }
           .padding(.horizontal, 12)
@@ -181,17 +167,13 @@ struct CommandInputBar: View {
                 .padding(.vertical, 1)
                 .background(Color.swRaised)
                 .cornerRadius(5)
-              Text("to navigate")
-                .foregroundStyle(Color.swDim)
-            }
-            HStack(spacing: 3) {
-              Text("⇧ tab")
+              Text("tab")
                 .font(.system(size: 9))
                 .padding(.horizontal, 4)
                 .padding(.vertical, 1)
                 .background(Color.swRaised)
                 .cornerRadius(5)
-              Text("to cycle tabs")
+              Text("to navigate")
                 .foregroundStyle(Color.swDim)
             }
             HStack(spacing: 3) {
