@@ -8,7 +8,8 @@ struct CommandInputBar: View {
   @State private var isFieldFocused = true
 
   private func confirmSuggestion(_ suggestion: String) {
-    let components = commandText.components(separatedBy: " ")
+    let baseText = session.originalAutocompleteText ?? commandText
+    let components = baseText.components(separatedBy: " ")
     guard let last = components.last, !last.isEmpty else { return }
 
     var newComponents = components
@@ -27,6 +28,7 @@ struct CommandInputBar: View {
     session.autocompleteSuggestions = []
     session.selectedSuggestionIndex = nil
     session.ghostText = ""
+    session.originalAutocompleteText = nil
   }
 
   private func isSystemCommand(_ name: String) -> Bool {

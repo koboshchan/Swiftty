@@ -76,7 +76,6 @@ struct AutocompleteTextField: NSViewRepresentable {
 
   class Coordinator: NSObject, NSTextFieldDelegate {
     var parent: AutocompleteTextField
-    var originalText: String? = nil
 
     init(_ parent: AutocompleteTextField) {
       self.parent = parent
@@ -115,7 +114,7 @@ struct AutocompleteTextField: NSViewRepresentable {
     func controlTextDidChange(_ obj: Notification) {
       if let textField = obj.object as? NSTextField {
         parent.text = textField.stringValue
-        originalText = nil
+        parent.session.originalAutocompleteText = nil
         parent.session.selectedSuggestionIndex = nil
         parent.session.autocompleteTabCount = 0
         parent.session.isAutocompleteOpen = false
@@ -213,7 +212,7 @@ struct AutocompleteTextField: NSViewRepresentable {
           session.ghostText = ""
           session.isAutocompleteOpen = false
           session.autocompleteTabCount = 0
-          originalText = nil
+          session.originalAutocompleteText = nil
           handled = true
         }
         return handled
@@ -227,6 +226,7 @@ struct AutocompleteTextField: NSViewRepresentable {
       if !session.isAutocompleteOpen {
         session.autocompleteTabCount += 1
         if session.autocompleteTabCount == 1 {
+          session.originalAutocompleteText = textField.stringValue
           performAutocomplete(textField: textField)
         } else if session.autocompleteTabCount >= 2 {
           session.isAutocompleteOpen = true
@@ -285,7 +285,7 @@ struct AutocompleteTextField: NSViewRepresentable {
     private func updateTextInputWithSuggestion(textField: AutocompleteNSTextField, index: Int) {
       let session = parent.session
       let suggestion = session.autocompleteSuggestions[index]
-      let baseText = originalText ?? parent.text
+      let baseText = session.originalAutocompleteText ?? parent.text
       let components = baseText.components(separatedBy: " ")
       guard let last = components.last, !last.isEmpty else { return }
 
@@ -326,7 +326,7 @@ struct AutocompleteTextField: NSViewRepresentable {
       session.ghostText = ""
       session.isAutocompleteOpen = false
       session.autocompleteTabCount = 0
-      originalText = nil
+      session.originalAutocompleteText = nil
     }
 
     private static var commandCache: [String]? = nil
@@ -589,6 +589,7 @@ struct AutocompleteTextField: NSViewRepresentable {
           completedToken = common + suffix
         }
 
+        newComponents[newComponents.count - 1] = completedToken
         let newText = newComponents.joined(separator: " ")
         parent.text = newText
         textField.stringValue = newText

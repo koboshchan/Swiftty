@@ -81,6 +81,7 @@ final class TerminalSession: ObservableObject, Identifiable {
   @Published var ghostText: String = ""
   @Published var autocompleteTabCount: Int = 0
   @Published var isAutocompleteOpen: Bool = false
+  @Published var originalAutocompleteText: String? = nil
   @Published var historySuggestions: [String] = []
   @Published var isHistoryOpen: Bool = false
   @Published var selectedHistoryIndex: Int? = nil
