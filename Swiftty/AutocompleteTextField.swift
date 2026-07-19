@@ -329,6 +329,49 @@ struct AutocompleteTextField: NSViewRepresentable {
       originalText = nil
     }
 
+    private static var commandCache: [String]? = nil
+
+    private static func loadSystemCommands() -> [String] {
+      if let cache = commandCache {
+        return cache
+      }
+      let fileManager = FileManager.default
+      let pathEnv = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin"
+      let paths = pathEnv.components(separatedBy: ":")
+      
+      var commands = Set<String>()
+      for path in paths {
+        let dirURL = URL(fileURLWithPath: path)
+        do {
+          let contents = try fileManager.contentsOfDirectory(atPath: dirURL.path)
+          for item in contents {
+            let fullPath = dirURL.appendingPathComponent(item).path
+            if fileManager.isExecutableFile(atPath: fullPath) {
+              commands.insert(item)
+            }
+          }
+        } catch {
+          // Ignore
+        }
+      }
+      let sortedCommands = Array(commands).sorted()
+      commandCache = sortedCommands
+      return sortedCommands
+    }
+
+    private func isCommandPosition(text: String) -> Bool {
+      let components = text.components(separatedBy: " ")
+      guard components.count > 0 else { return true }
+      if components.count == 1 {
+        return true
+      }
+      let secondToLast = components[components.count - 2]
+      if secondToLast == "|" || secondToLast == "&&" || secondToLast == "||" || secondToLast == ";" {
+        return true
+      }
+      return false
+    }
+
     private func updateSuggestions(text: String) {
       let session = parent.session
       let components = text.components(separatedBy: " ")
@@ -336,6 +379,31 @@ struct AutocompleteTextField: NSViewRepresentable {
         session.autocompleteSuggestions = []
         session.ghostText = ""
         return
+      }
+
+      // If we are in a command position, try command completion
+      if isCommandPosition(text: text) && !last.contains("/") && !last.hasPrefix(".") && !last.hasPrefix("~") {
+        let systemCommands = Self.loadSystemCommands()
+        let matches = systemCommands.filter {
+          $0.lowercased().hasPrefix(last.lowercased())
+        }.sorted()
+
+        if !matches.isEmpty {
+          session.autocompleteSuggestions = matches
+          var common = matches[0]
+          for m in matches.dropFirst() {
+            while !m.lowercased().hasPrefix(common.lowercased()) {
+              common = String(common.dropLast())
+            }
+          }
+          if common.count >= last.count {
+            let remainder = String(common.dropFirst(last.count))
+            session.ghostText = remainder + (matches.count == 1 ? " " : "")
+          } else {
+            session.ghostText = ""
+          }
+          return
+        }
       }
 
       let fileManager = FileManager.default
@@ -421,6 +489,40 @@ struct AutocompleteTextField: NSViewRepresentable {
       let currentText = textField.stringValue
       let components = currentText.components(separatedBy: " ")
       guard let last = components.last, !last.isEmpty else { return }
+
+      // If we are in a command position, try command completion
+      if isCommandPosition(text: currentText) && !last.contains("/") && !last.hasPrefix(".") && !last.hasPrefix("~") {
+        let systemCommands = Self.loadSystemCommands()
+        let matches = systemCommands.filter {
+          $0.lowercased().hasPrefix(last.lowercased())
+        }.sorted()
+
+        if !matches.isEmpty {
+          // Find LCP
+          var common = matches[0]
+          for m in matches.dropFirst() {
+            while !m.lowercased().hasPrefix(common.lowercased()) {
+              common = String(common.dropLast())
+            }
+          }
+
+          let suffix = matches.count == 1 ? " " : ""
+          var newComponents = components
+          newComponents[newComponents.count - 1] = common + suffix
+
+          let newText = newComponents.joined(separator: " ")
+          parent.text = newText
+          textField.stringValue = newText
+
+          if let editor = textField.currentEditor() {
+            textField.attributedStringValue = highlight(newText)
+            editor.selectedRange = NSRange(location: newText.count, length: 0)
+          }
+
+          updateSuggestions(text: newText)
+          return
+        }
+      }
 
       let fileManager = FileManager.default
       let expandedLast = last.hasPrefix("~") ? NSString(string: last).expandingTildeInPath : last

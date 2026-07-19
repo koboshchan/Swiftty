@@ -29,6 +29,29 @@ struct CommandInputBar: View {
     session.ghostText = ""
   }
 
+  private func isSystemCommand(_ name: String) -> Bool {
+    let pathEnv = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin"
+    let paths = pathEnv.components(separatedBy: ":")
+    let fileManager = FileManager.default
+    for path in paths {
+      let fullPath = URL(fileURLWithPath: path).appendingPathComponent(name).path
+      if fileManager.isExecutableFile(atPath: fullPath) {
+        return true
+      }
+    }
+    return false
+  }
+
+  private func suggestionInfo(for suggestion: String) -> (icon: String, typeText: String, color: Color) {
+    if suggestion.hasSuffix("/") {
+      return ("folder.fill", "Folder", Color.swBlue)
+    } else if !suggestion.contains("/") && isSystemCommand(suggestion) {
+      return ("terminal.fill", "Command", Color.swMint)
+    } else {
+      return ("doc.text.fill", "File", Color.swMuted)
+    }
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       // Suggestion Dropdown Panel (Autocomplete)
@@ -38,17 +61,18 @@ struct CommandInputBar: View {
             VStack(alignment: .leading, spacing: 2) {
               ForEach(Array(session.autocompleteSuggestions.enumerated()), id: \.element) { idx, suggestion in
                 let isSelected = session.selectedSuggestionIndex == idx
+                let info = suggestionInfo(for: suggestion)
                 Button(action: {
                   confirmSuggestion(suggestion)
                 }) {
                   HStack(spacing: 12) {
-                    Image(systemName: suggestion.hasSuffix("/") ? "folder.fill" : "doc.text.fill")
+                    Image(systemName: info.icon)
                       .font(.system(size: 11))
-                      .foregroundStyle(isSelected ? Color.white : (suggestion.hasSuffix("/") ? Color.swBlue : Color.swMuted))
+                      .foregroundStyle(isSelected ? Color.white : info.color)
                     Text(suggestion)
                       .font(.system(size: 13, design: .monospaced))
                     Spacer()
-                    Text(suggestion.hasSuffix("/") ? "Folder" : "File")
+                    Text(info.typeText)
                       .font(.system(size: 11))
                       .foregroundStyle(isSelected ? Color.white.opacity(0.7) : Color.swDim)
                   }
