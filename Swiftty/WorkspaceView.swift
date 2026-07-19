@@ -78,6 +78,12 @@ final class TerminalSession: ObservableObject, Identifiable {
   @Published var autocompleteSuggestions: [String] = []
   @Published var selectedSuggestionIndex: Int? = nil
   @Published var ghostText: String = ""
+  @Published var autocompleteTabCount: Int = 0
+  @Published var isAutocompleteOpen: Bool = false
+  @Published var historySuggestions: [String] = []
+  @Published var isHistoryOpen: Bool = false
+  @Published var selectedHistoryIndex: Int? = nil
+  @Published var historyTab: String = "All"
 
   init(currentDirectory: String, ordinal: Int) {
     self.currentDirectory = currentDirectory
@@ -91,6 +97,52 @@ final class TerminalSession: ObservableObject, Identifiable {
     let home = FileManager.default.homeDirectoryForCurrentUser.path
     guard path.hasPrefix(home) else { return path }
     return "~" + String(path.dropFirst(home.count))
+  }
+
+  static func loadZshHistory() -> [String] {
+    let home = FileManager.default.homeDirectoryForCurrentUser.path
+    let historyPath = URL(fileURLWithPath: home).appendingPathComponent(".zsh_history").path
+    do {
+      let data = try Data(contentsOf: URL(fileURLWithPath: historyPath))
+      if let content = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .ascii) {
+        let lines = content.components(separatedBy: "\n")
+        var commands: [String] = []
+        var seen = Set<String>()
+        for line in lines.reversed() {
+          let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+          guard !trimmed.isEmpty else { continue }
+          
+          var cmd = trimmed
+          if trimmed.hasPrefix(":") {
+            let parts = trimmed.components(separatedBy: ";")
+            if parts.count >= 2 {
+              cmd = parts.dropFirst().joined(separator: ";")
+            }
+          }
+          
+          let finalCmd = cmd.trimmingCharacters(in: .whitespacesAndNewlines)
+          if !finalCmd.isEmpty && !seen.contains(finalCmd) {
+            seen.insert(finalCmd)
+            commands.append(finalCmd)
+          }
+        }
+        return commands
+      }
+    } catch {
+      // Ignore
+    }
+    return ["ls -la", "git status", "cd ~"]
+  }
+
+  func openHistory(filter: String) {
+    let allHistory = TerminalSession.loadZshHistory()
+    if filter.isEmpty {
+      historySuggestions = allHistory
+    } else {
+      historySuggestions = allHistory.filter { $0.localizedCaseInsensitiveContains(filter) }
+    }
+    selectedHistoryIndex = historySuggestions.isEmpty ? nil : 0
+    isHistoryOpen = true
   }
 
   nonisolated private func runShellCommand(_ command: String, directory: String) -> (
@@ -563,8 +615,8 @@ private struct CommandInputBar: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
-      // Suggestion Dropdown Panel
-      if !session.autocompleteSuggestions.isEmpty {
+      // Suggestion Dropdown Panel (Autocomplete)
+      if session.isAutocompleteOpen && !session.autocompleteSuggestions.isEmpty {
         VStack(alignment: .leading, spacing: 0) {
           ScrollView {
             VStack(alignment: .leading, spacing: 2) {
@@ -573,7 +625,7 @@ private struct CommandInputBar: View {
                 Button(action: {
                   confirmSuggestion(suggestion)
                 }) {
-                  HStack(spacing: 8) {
+                  HStack(spacing: 12) {
                     Image(systemName: suggestion.hasSuffix("/") ? "folder.fill" : "doc.text.fill")
                       .font(.system(size: 11))
                       .foregroundStyle(isSelected ? Color.white : (suggestion.hasSuffix("/") ? Color.swBlue : Color.swMuted))
@@ -596,16 +648,131 @@ private struct CommandInputBar: View {
             .padding(6)
           }
           .frame(maxHeight: 180)
-
-          Rectangle()
-            .fill(Color.swLine)
-            .frame(height: 1)
         }
-        .background(Color.swPanel)
-        .cornerRadius(6)
+        .glassEffect(.regular.tint(Color.white.opacity(0.015)), in: .rect(cornerRadius: 8))
         .overlay(
-          RoundedRectangle(cornerRadius: 6)
-            .stroke(Color.swLine, lineWidth: 1)
+          RoundedRectangle(cornerRadius: 8)
+            .stroke(Color.white.opacity(0.12), lineWidth: 0.8)
+        )
+        .padding(.horizontal, 20)
+        .padding(.bottom, 8)
+      }
+
+      // History Popup Panel
+      if session.isHistoryOpen && !session.historySuggestions.isEmpty {
+        VStack(alignment: .leading, spacing: 0) {
+          // Tab bar header
+          HStack(spacing: 16) {
+            Text("HISTORY")
+              .font(.system(size: 11, weight: .bold))
+              .foregroundStyle(Color.swMuted)
+            
+            ForEach(["All", "Commands", "Prompts"], id: \.self) { tab in
+              let isSelected = session.historyTab == tab
+              Button(action: { session.historyTab = tab }) {
+                Text(tab)
+                  .font(.system(size: 11, weight: isSelected ? .bold : .regular))
+                  .foregroundStyle(isSelected ? Color.swText : Color.swMuted)
+                  .padding(.horizontal, 8)
+                  .padding(.vertical, 3)
+                  .background(isSelected ? Color.swRaised.opacity(0.4) : Color.clear)
+                  .cornerRadius(4)
+              }
+              .buttonStyle(.plain)
+            }
+            Spacer()
+          }
+          .padding(.horizontal, 12)
+          .padding(.vertical, 8)
+          
+          Rectangle()
+            .fill(Color.white.opacity(0.08))
+            .frame(height: 0.8)
+          
+          ScrollView {
+            VStack(alignment: .leading, spacing: 1) {
+              ForEach(Array(session.historySuggestions.enumerated()), id: \.element) { idx, suggestion in
+                let isSelected = session.selectedHistoryIndex == idx
+                Button(action: {
+                  commandText = suggestion
+                  session.isHistoryOpen = false
+                  session.historySuggestions = []
+                  session.selectedHistoryIndex = nil
+                }) {
+                  HStack(spacing: 12) {
+                    Image(systemName: "terminal.fill")
+                      .font(.system(size: 10))
+                      .foregroundStyle(isSelected ? Color.white : Color.swDim)
+                    Text(suggestion)
+                      .font(.system(size: 13, design: .monospaced))
+                      .lineLimit(1)
+                    Spacer()
+                  }
+                  .padding(.horizontal, 10)
+                  .padding(.vertical, 6)
+                  .background(isSelected ? Color.swBlue : Color.clear)
+                  .foregroundStyle(isSelected ? Color.white : Color.swText)
+                  .cornerRadius(4)
+                }
+                .buttonStyle(.plain)
+              }
+            }
+            .padding(6)
+          }
+          .frame(maxHeight: 200)
+          
+          Rectangle()
+            .fill(Color.white.opacity(0.08))
+            .frame(height: 0.8)
+          
+          // Footer hints
+          HStack(spacing: 12) {
+            HStack(spacing: 3) {
+              Text("↑")
+                .font(.system(size: 9))
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(Color.swRaised)
+                .cornerRadius(3)
+              Text("↓")
+                .font(.system(size: 9))
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(Color.swRaised)
+                .cornerRadius(3)
+              Text("to navigate")
+                .foregroundStyle(Color.swDim)
+            }
+            HStack(spacing: 3) {
+              Text("⇧ tab")
+                .font(.system(size: 9))
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(Color.swRaised)
+                .cornerRadius(3)
+              Text("to cycle tabs")
+                .foregroundStyle(Color.swDim)
+            }
+            HStack(spacing: 3) {
+              Text("esc")
+                .font(.system(size: 9))
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(Color.swRaised)
+                .cornerRadius(3)
+              Text("to dismiss")
+                .foregroundStyle(Color.swDim)
+            }
+            Spacer()
+          }
+          .font(.system(size: 10, design: .monospaced))
+          .padding(.horizontal, 12)
+          .padding(.vertical, 6)
+        }
+        .glassEffect(.regular.tint(Color.white.opacity(0.015)), in: .rect(cornerRadius: 8))
+        .overlay(
+          RoundedRectangle(cornerRadius: 8)
+            .stroke(Color.white.opacity(0.12), lineWidth: 0.8)
         )
         .padding(.horizontal, 20)
         .padding(.bottom, 8)
@@ -1283,15 +1450,21 @@ struct AutocompleteTextField: NSViewRepresentable {
 
       let components = text.components(separatedBy: " ")
       var currentPos = 0
-      var isFirstWord = true
+      var expectCommand = true
 
       for comp in components {
         let range = NSRange(location: currentPos, length: comp.count)
-        if isFirstWord && !comp.isEmpty {
+        
+        if comp == "|" || comp == "&&" || comp == "||" || comp == ";" {
+          attr.addAttribute(.foregroundColor, value: NSColor(red: 214/255, green: 214/255, blue: 214/255, alpha: 1), range: range)
+          expectCommand = true
+        } else if expectCommand && !comp.isEmpty {
           attr.addAttribute(.foregroundColor, value: NSColor(red: 152/255, green: 195/255, blue: 121/255, alpha: 1), range: range)
-          isFirstWord = false
+          expectCommand = false
         } else if comp.hasPrefix("-") && !comp.isEmpty {
           attr.addAttribute(.foregroundColor, value: NSColor(red: 86/255, green: 182/255, blue: 194/255, alpha: 1), range: range)
+        } else {
+          attr.addAttribute(.foregroundColor, value: NSColor(red: 214/255, green: 214/255, blue: 214/255, alpha: 1), range: range)
         }
         currentPos += comp.count + 1
       }
@@ -1303,6 +1476,8 @@ struct AutocompleteTextField: NSViewRepresentable {
         parent.text = textField.stringValue
         originalText = nil
         parent.session.selectedSuggestionIndex = nil
+        parent.session.autocompleteTabCount = 0
+        parent.session.isAutocompleteOpen = false
 
         if let textView = textField.currentEditor() as? NSTextView {
           let highlighted = highlight(textField.stringValue)
@@ -1312,6 +1487,10 @@ struct AutocompleteTextField: NSViewRepresentable {
         }
 
         updateSuggestions(text: textField.stringValue)
+
+        if parent.session.isHistoryOpen {
+          parent.session.openHistory(filter: textField.stringValue)
+        }
       }
     }
 
@@ -1326,7 +1505,10 @@ struct AutocompleteTextField: NSViewRepresentable {
           return true
         }
 
-        if !session.autocompleteSuggestions.isEmpty, let idx = session.selectedSuggestionIndex {
+        if session.isHistoryOpen, let idx = session.selectedHistoryIndex {
+          confirmHistorySelection(textField: textField, index: idx)
+          return true
+        } else if session.isAutocompleteOpen && !session.autocompleteSuggestions.isEmpty, let idx = session.selectedSuggestionIndex {
           confirmSuggestion(textField: textField, index: idx)
           return true
         } else {
@@ -1338,32 +1520,62 @@ struct AutocompleteTextField: NSViewRepresentable {
       if commandSelector == #selector(NSResponder.insertTab(_:)) ||
          commandSelector == Selector(("insertBacktab:")) ||
          commandSelector == Selector(("insertTabIgnoringFieldEditor:")) {
-        handleTabOrNavigation(textField: textField, isForward: true)
+        if session.isHistoryOpen {
+          // Cycle history tabs
+          let tabs = ["All", "Commands", "Prompts"]
+          if let idx = tabs.firstIndex(of: session.historyTab) {
+            let isShift = NSEvent.modifierFlags.contains(.shift)
+            let nextIdx = isShift ? (idx - 1 + tabs.count) % tabs.count : (idx + 1) % tabs.count
+            session.historyTab = tabs[nextIdx]
+          }
+        } else {
+          handleTabOrNavigation(textField: textField, isForward: true)
+        }
         return true
       }
 
       if commandSelector == #selector(NSResponder.moveDown(_:)) {
-        if !session.autocompleteSuggestions.isEmpty {
+        if session.isHistoryOpen {
+          navigateHistory(isForward: true)
+          return true
+        } else if session.isAutocompleteOpen {
           handleTabOrNavigation(textField: textField, isForward: true)
           return true
         }
       }
 
       if commandSelector == #selector(NSResponder.moveUp(_:)) {
-        if !session.autocompleteSuggestions.isEmpty {
+        if session.isHistoryOpen {
+          navigateHistory(isForward: false)
+          return true
+        } else if session.isAutocompleteOpen {
           handleTabOrNavigation(textField: textField, isForward: false)
+          return true
+        } else {
+          // Up Arrow opens history suggestions
+          session.openHistory(filter: parent.text)
           return true
         }
       }
 
       if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-        if !session.autocompleteSuggestions.isEmpty {
+        var handled = false
+        if session.isHistoryOpen {
+          session.isHistoryOpen = false
+          session.historySuggestions = []
+          session.selectedHistoryIndex = nil
+          handled = true
+        }
+        if session.isAutocompleteOpen || !session.autocompleteSuggestions.isEmpty {
           session.autocompleteSuggestions = []
           session.selectedSuggestionIndex = nil
           session.ghostText = ""
+          session.isAutocompleteOpen = false
+          session.autocompleteTabCount = 0
           originalText = nil
-          return true
+          handled = true
         }
+        return handled
       }
 
       return false
@@ -1371,13 +1583,21 @@ struct AutocompleteTextField: NSViewRepresentable {
 
     func handleTabOrNavigation(textField: AutocompleteNSTextField, isForward: Bool) {
       let session = parent.session
-      if session.autocompleteSuggestions.isEmpty {
-        performAutocomplete(textField: textField)
-      } else {
-        if originalText == nil {
-          originalText = parent.text
+      if !session.isAutocompleteOpen {
+        session.autocompleteTabCount += 1
+        if session.autocompleteTabCount == 1 {
+          performAutocomplete(textField: textField)
+        } else if session.autocompleteTabCount >= 2 {
+          session.isAutocompleteOpen = true
+          if !session.autocompleteSuggestions.isEmpty {
+            session.selectedSuggestionIndex = 0
+            updateTextInputWithSuggestion(textField: textField, index: 0)
+          }
         }
+      } else {
         let count = session.autocompleteSuggestions.count
+        guard count > 0 else { return }
+
         if let currentIdx = session.selectedSuggestionIndex {
           let nextIdx = isForward ? (currentIdx + 1) % count : (currentIdx - 1 + count) % count
           session.selectedSuggestionIndex = nextIdx
@@ -1388,6 +1608,37 @@ struct AutocompleteTextField: NSViewRepresentable {
           updateTextInputWithSuggestion(textField: textField, index: firstIdx)
         }
       }
+    }
+
+    private func navigateHistory(isForward: Bool) {
+      let session = parent.session
+      let count = session.historySuggestions.count
+      guard count > 0 else { return }
+
+      if let currentIdx = session.selectedHistoryIndex {
+        let nextIdx = isForward ? (currentIdx + 1) % count : (currentIdx - 1 + count) % count
+        session.selectedHistoryIndex = nextIdx
+      } else {
+        session.selectedHistoryIndex = isForward ? 0 : count - 1
+      }
+    }
+
+    private func confirmHistorySelection(textField: AutocompleteNSTextField, index: Int) {
+      let session = parent.session
+      let command = session.historySuggestions[index]
+      parent.text = command
+      textField.stringValue = command
+
+      if let textView = textField.currentEditor() as? NSTextView {
+        let highlighted = highlight(command)
+        textView.textStorage?.setAttributedString(highlighted)
+      } else {
+        textField.attributedStringValue = highlight(command)
+      }
+
+      session.isHistoryOpen = false
+      session.historySuggestions = []
+      session.selectedHistoryIndex = nil
     }
 
     private func updateTextInputWithSuggestion(textField: AutocompleteNSTextField, index: Int) {
@@ -1432,6 +1683,8 @@ struct AutocompleteTextField: NSViewRepresentable {
       session.autocompleteSuggestions = []
       session.selectedSuggestionIndex = nil
       session.ghostText = ""
+      session.isAutocompleteOpen = false
+      session.autocompleteTabCount = 0
       originalText = nil
     }
 
@@ -1446,18 +1699,25 @@ struct AutocompleteTextField: NSViewRepresentable {
 
       let fileManager = FileManager.default
       let expandedLast = last.hasPrefix("~") ? NSString(string: last).expandingTildeInPath : last
-      let expandedDir = NSString(string: parent.currentDirectory).expandingTildeInPath
+      let sessionDir = NSString(string: parent.currentDirectory).expandingTildeInPath
 
       let searchDir: String
       let searchPrefix: String
 
       if expandedLast.contains("/") {
         let nsLast = expandedLast as NSString
-        let parentPath = nsLast.deletingLastPathComponent
-        searchDir = parentPath.isEmpty ? "/" : parentPath
+        let relParent = nsLast.deletingLastPathComponent
         searchPrefix = nsLast.lastPathComponent
+
+        if relParent.hasPrefix("/") {
+          searchDir = relParent
+        } else {
+          let baseURl = URL(fileURLWithPath: sessionDir)
+          let resolvedURL = URL(fileURLWithPath: relParent, relativeTo: baseURl)
+          searchDir = resolvedURL.path
+        }
       } else {
-        searchDir = expandedDir
+        searchDir = sessionDir
         searchPrefix = expandedLast
       }
 
@@ -1523,18 +1783,25 @@ struct AutocompleteTextField: NSViewRepresentable {
 
       let fileManager = FileManager.default
       let expandedLast = last.hasPrefix("~") ? NSString(string: last).expandingTildeInPath : last
-      let expandedDir = NSString(string: parent.currentDirectory).expandingTildeInPath
+      let sessionDir = NSString(string: parent.currentDirectory).expandingTildeInPath
 
       let searchDir: String
       let searchPrefix: String
 
       if expandedLast.contains("/") {
         let nsLast = expandedLast as NSString
-        let parentPath = nsLast.deletingLastPathComponent
-        searchDir = parentPath.isEmpty ? "/" : parentPath
+        let relParent = nsLast.deletingLastPathComponent
         searchPrefix = nsLast.lastPathComponent
+
+        if relParent.hasPrefix("/") {
+          searchDir = relParent
+        } else {
+          let baseURl = URL(fileURLWithPath: sessionDir)
+          let resolvedURL = URL(fileURLWithPath: relParent, relativeTo: baseURl)
+          searchDir = resolvedURL.path
+        }
       } else {
-        searchDir = expandedDir
+        searchDir = sessionDir
         searchPrefix = expandedLast
       }
 
@@ -1568,8 +1835,13 @@ struct AutocompleteTextField: NSViewRepresentable {
         let completedToken: String
         if expandedLast.contains("/") {
           let nsLast = expandedLast as NSString
-          let parentPath = nsLast.deletingLastPathComponent
-          completedToken = (parentPath as NSString).appendingPathComponent(common) + suffix
+          let relParent = nsLast.deletingLastPathComponent
+          
+          if relParent.hasPrefix("/") {
+            completedToken = (relParent as NSString).appendingPathComponent(common) + suffix
+          } else {
+            completedToken = (relParent as NSString).appendingPathComponent(common) + suffix
+          }
         } else {
           completedToken = common + suffix
         }
