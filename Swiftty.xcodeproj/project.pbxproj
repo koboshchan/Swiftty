@@ -6,6 +6,11 @@
 	objectVersion = 90;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		9E06E9A0300D8E410074896A /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000210 /* SwiftTerm */; };
+		9E06E9A1300D8E410074896A /* HighlightSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000310 /* HighlightSwift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		000000000000000000000120 /* Swiftty.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Swiftty.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -22,6 +27,8 @@
 		000000000000000130000000 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				9E06E9A1300D8E410074896A /* HighlightSwift in Frameworks */,
+				9E06E9A0300D8E410074896A /* SwiftTerm in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -62,6 +69,7 @@
 			name = Swiftty;
 			packageProductDependencies = (
 				000000000000000000000210 /* SwiftTerm */,
+				000000000000000000000310 /* HighlightSwift */,
 			);
 			productName = Swiftty;
 			productReference = 000000000000000000000120 /* Swiftty.app */;
@@ -91,10 +99,11 @@
 			);
 			mainGroup = 000000000000000000000001;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 90;
 			packageReferences = (
 				000000000000000000000200 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
+				000000000000000000000300 /* XCRemoteSwiftPackageReference "HighlightSwift" */,
 			);
+			preferredProjectObjectVersion = 90;
 			productRefGroup = 000000000000000000000020 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -119,25 +128,6 @@
 			);
 		};
 /* End PBXSourcesBuildPhase section */
-
-/* Begin XCRemoteSwiftPackageReference section */
-		000000000000000000000200 /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 1.1.2;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		000000000000000000000210 /* SwiftTerm */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 000000000000000000000200 /* XCRemoteSwiftPackageReference "SwiftTerm" */;
-			productName = SwiftTerm;
-		};
-/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */
 		000000000000000011000000 /* Debug configuration for PBXProject "Swiftty" */ = {
@@ -372,6 +362,38 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		000000000000000000000200 /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.1.2;
+			};
+		};
+		000000000000000000000300 /* XCRemoteSwiftPackageReference "HighlightSwift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/appstefan/HighlightSwift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		000000000000000000000210 /* SwiftTerm */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 000000000000000000000200 /* XCRemoteSwiftPackageReference "SwiftTerm" */;
+			productName = SwiftTerm;
+		};
+		000000000000000000000310 /* HighlightSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 000000000000000000000300 /* XCRemoteSwiftPackageReference "HighlightSwift" */;
+			productName = HighlightSwift;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 000000000000000000000000 /* Project object */;
 }

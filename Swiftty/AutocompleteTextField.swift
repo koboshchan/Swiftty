@@ -24,6 +24,7 @@ class AutocompleteNSTextField: NSTextField {
 
 struct AutocompleteTextField: NSViewRepresentable {
   @Binding var text: String
+  @Binding var height: CGFloat
   let placeholder: String
   let currentDirectory: String
   var isFocused: Bool
@@ -39,6 +40,12 @@ struct AutocompleteTextField: NSViewRepresentable {
     textField.font = NSFont.monospacedSystemFont(ofSize: 14.0, weight: .regular)
     textField.textColor = NSColor(red: 214/255, green: 214/255, blue: 214/255, alpha: 1)
     textField.delegate = context.coordinator
+    
+    // Configure cell wrapping and disable single line mode
+    textField.cell?.isScrollable = false
+    textField.cell?.wraps = true
+    textField.maximumNumberOfLines = 0
+    
     let coordinator = context.coordinator
     textField.onTab = {
       coordinator.handleTabOrNavigation(textField: textField, isForward: true)
@@ -61,6 +68,9 @@ struct AutocompleteTextField: NSViewRepresentable {
         editor.selectedRange = NSRange(location: text.count, length: 0)
       }
     }
+    
+    context.coordinator.adjustHeight(for: nsView)
+    
     if isFocused {
       DispatchQueue.main.async {
         if nsView.window != nil && nsView.window?.firstResponder != nsView.currentEditor() {
@@ -131,10 +141,27 @@ struct AutocompleteTextField: NSViewRepresentable {
           textField.attributedStringValue = highlight(textField.stringValue)
         }
 
+        adjustHeight(for: textField)
+
         updateSuggestions(text: textField.stringValue)
 
         if parent.session.isHistoryOpen {
           parent.session.openHistory(filter: textField.stringValue)
+        }
+      }
+    }
+
+    func adjustHeight(for textField: NSTextField) {
+      let width = textField.frame.width > 0 ? textField.frame.width : 500
+      let attributedString = textField.attributedStringValue
+      let size = attributedString.boundingRect(
+        with: CGSize(width: width, height: .greatestFiniteMagnitude),
+        options: [.usesLineFragmentOrigin, .usesFontLeading]
+      ).size
+      let newHeight = max(22, ceil(size.height) + 4)
+      if parent.height != newHeight {
+        DispatchQueue.main.async {
+          self.parent.height = newHeight
         }
       }
     }
@@ -145,7 +172,7 @@ struct AutocompleteTextField: NSViewRepresentable {
 
       if commandSelector == #selector(NSResponder.insertNewline(_:)) {
         let flags = NSEvent.modifierFlags
-        if flags.contains(.command) {
+        if flags.contains(.command) || flags.contains(.option) {
           textView.insertText("\n", replacementRange: textView.selectedRange())
           return true
         }
@@ -165,11 +192,11 @@ struct AutocompleteTextField: NSViewRepresentable {
       if commandSelector == #selector(NSResponder.insertTab(_:)) ||
          commandSelector == Selector(("insertBacktab:")) ||
          commandSelector == Selector(("insertTabIgnoringFieldEditor:")) {
+        let isShift = NSEvent.modifierFlags.contains(.shift)
         if session.isHistoryOpen {
-          let isShift = NSEvent.modifierFlags.contains(.shift)
           navigateHistory(isForward: isShift)
         } else {
-          handleTabOrNavigation(textField: textField, isForward: true)
+          handleTabOrNavigation(textField: textField, isForward: !isShift)
         }
         return true
       }
@@ -179,7 +206,7 @@ struct AutocompleteTextField: NSViewRepresentable {
           navigateHistory(isForward: false)
           return true
         } else if session.isAutocompleteOpen {
-          handleTabOrNavigation(textField: textField, isForward: false)
+          handleTabOrNavigation(textField: textField, isForward: true)
           return true
         }
       }
@@ -189,7 +216,7 @@ struct AutocompleteTextField: NSViewRepresentable {
           navigateHistory(isForward: true)
           return true
         } else if session.isAutocompleteOpen {
-          handleTabOrNavigation(textField: textField, isForward: true)
+          handleTabOrNavigation(textField: textField, isForward: false)
           return true
         } else {
           // Up Arrow opens history suggestions
@@ -336,9 +363,23 @@ struct AutocompleteTextField: NSViewRepresentable {
         return cache
       }
       let fileManager = FileManager.default
-      let pathEnv = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin"
-      let paths = pathEnv.components(separatedBy: ":")
+      let pathEnv = ProcessInfo.processInfo.environment["PATH"] ?? ""
+      var paths = pathEnv.components(separatedBy: ":")
       
+      let extraPaths = [
+        "/opt/homebrew/bin",
+        "/opt/homebrew/sbin",
+        "/usr/local/bin",
+        "/usr/local/sbin",
+        "\(NSHomeDirectory())/.cargo/bin",
+        "\(NSHomeDirectory())/go/bin"
+      ]
+      for ep in extraPaths {
+        if !paths.contains(ep) {
+          paths.append(ep)
+        }
+      }
+
       var commands = Set<String>()
       for path in paths {
         let dirURL = URL(fileURLWithPath: path)

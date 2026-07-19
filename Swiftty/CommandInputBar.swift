@@ -1,11 +1,29 @@
 import SwiftUI
 
+struct HistoryItem: Identifiable {
+  let id: Int
+  let command: String
+}
+
+struct AutocompleteItem: Identifiable {
+  let id: Int
+  let suggestion: String
+}
+
 struct CommandInputBar: View {
   @Binding var commandText: String
   @ObservedObject var session: TerminalSession
   let submit: () -> Void
 
-  @State private var isFieldFocused = true
+  @State private var inputHeight: CGFloat = 22
+
+  var historyItems: [HistoryItem] {
+    session.historySuggestions.enumerated().reversed().map { HistoryItem(id: $0.offset, command: $0.element) }
+  }
+
+  var autocompleteItems: [AutocompleteItem] {
+    session.autocompleteSuggestions.enumerated().map { AutocompleteItem(id: $0.offset, suggestion: $0.element) }
+  }
 
   private func confirmSuggestion(_ suggestion: String) {
     let baseText = session.originalAutocompleteText ?? commandText
@@ -59,37 +77,49 @@ struct CommandInputBar: View {
       // Suggestion Dropdown Panel (Autocomplete)
       if session.isAutocompleteOpen && !session.autocompleteSuggestions.isEmpty {
         VStack(alignment: .leading, spacing: 0) {
-          ScrollView {
-            VStack(alignment: .leading, spacing: 2) {
-              ForEach(Array(session.autocompleteSuggestions.enumerated().reversed()), id: \.element) { idx, suggestion in
-                let isSelected = session.selectedSuggestionIndex == idx
-                let info = suggestionInfo(for: suggestion)
-                Button(action: {
-                  confirmSuggestion(suggestion)
-                }) {
-                  HStack(spacing: 12) {
-                    Image(systemName: info.icon)
-                      .font(.system(size: 11))
-                      .foregroundStyle(isSelected ? Color.white : info.color)
-                    Text(suggestion)
-                      .font(.system(size: 13, design: .monospaced))
-                    Spacer()
-                    Text(info.typeText)
-                      .font(.system(size: 11))
-                      .foregroundStyle(isSelected ? Color.white.opacity(0.7) : Color.swDim)
+          ScrollViewReader { proxy in
+            ScrollView {
+              VStack(alignment: .leading, spacing: 2) {
+                ForEach(autocompleteItems) { item in
+                  let idx = item.id
+                  let suggestion = item.suggestion
+                  let isSelected = session.selectedSuggestionIndex == idx
+                  let info = suggestionInfo(for: suggestion)
+                  Button(action: {
+                    confirmSuggestion(suggestion)
+                  }) {
+                    HStack(spacing: 12) {
+                      Image(systemName: info.icon)
+                        .font(.system(size: 11))
+                        .foregroundStyle(isSelected ? Color.white : info.color)
+                      Text(suggestion)
+                        .font(.system(size: 13, design: .monospaced))
+                      Spacer()
+                      Text(info.typeText)
+                        .font(.system(size: 11))
+                        .foregroundStyle(isSelected ? Color.white.opacity(0.7) : Color.swDim)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(isSelected ? Color.accentColor : Color.clear)
+                    .foregroundStyle(isSelected ? Color.white : Color.swText)
+                    .cornerRadius(8)
                   }
-                  .padding(.horizontal, 10)
-                  .padding(.vertical, 6)
-                  .background(isSelected ? Color.accentColor : Color.clear)
-                  .foregroundStyle(isSelected ? Color.white : Color.swText)
-                  .cornerRadius(8)
+                  .buttonStyle(.plain)
+                  .id(idx)
                 }
-                .buttonStyle(.plain)
+              }
+              .padding(6)
+            }
+            .frame(maxHeight: 180)
+            .onChange(of: session.selectedSuggestionIndex) { _, newIdx in
+              if let idx = newIdx {
+                withAnimation(.easeOut(duration: 0.1)) {
+                  proxy.scrollTo(idx, anchor: .center)
+                }
               }
             }
-            .padding(6)
           }
-          .frame(maxHeight: 180)
         }
         .glassEffect(.regular.tint(Color.white.opacity(0.015)), in: .rect(cornerRadius: 14))
         .overlay(
@@ -116,37 +146,49 @@ struct CommandInputBar: View {
             .fill(Color.white.opacity(0.08))
             .frame(height: 0.8)
           
-          ScrollView {
-            VStack(alignment: .leading, spacing: 1) {
-              ForEach(Array(session.historySuggestions.enumerated().reversed()), id: \.element) { idx, suggestion in
-                let isSelected = session.selectedHistoryIndex == idx
-                Button(action: {
-                  commandText = suggestion
-                  session.isHistoryOpen = false
-                  session.historySuggestions = []
-                  session.selectedHistoryIndex = nil
-                }) {
-                  HStack(spacing: 12) {
-                    Image(systemName: "terminal.fill")
-                      .font(.system(size: 10))
-                      .foregroundStyle(isSelected ? Color.white : Color.swDim)
-                    Text(suggestion)
-                      .font(.system(size: 13, design: .monospaced))
-                      .lineLimit(1)
-                    Spacer()
+          ScrollViewReader { proxy in
+            ScrollView {
+              VStack(alignment: .leading, spacing: 1) {
+                ForEach(historyItems) { item in
+                  let idx = item.id
+                  let suggestion = item.command
+                  let isSelected = session.selectedHistoryIndex == idx
+                  Button(action: {
+                    commandText = suggestion
+                    session.isHistoryOpen = false
+                    session.historySuggestions = []
+                    session.selectedHistoryIndex = nil
+                  }) {
+                    HStack(spacing: 12) {
+                      Image(systemName: "terminal.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(isSelected ? Color.white : Color.swDim)
+                      Text(suggestion)
+                        .font(.system(size: 13, design: .monospaced))
+                        .lineLimit(1)
+                      Spacer()
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(isSelected ? Color.accentColor : Color.clear)
+                    .foregroundStyle(isSelected ? Color.white : Color.swText)
+                    .cornerRadius(8)
                   }
-                  .padding(.horizontal, 10)
-                  .padding(.vertical, 6)
-                  .background(isSelected ? Color.accentColor : Color.clear)
-                  .foregroundStyle(isSelected ? Color.white : Color.swText)
-                  .cornerRadius(8)
+                  .buttonStyle(.plain)
+                  .id(idx)
                 }
-                .buttonStyle(.plain)
+              }
+              .padding(6)
+            }
+            .frame(maxHeight: 200)
+            .onChange(of: session.selectedHistoryIndex) { _, newIdx in
+              if let idx = newIdx {
+                withAnimation(.easeOut(duration: 0.1)) {
+                  proxy.scrollTo(idx, anchor: .center)
+                }
               }
             }
-            .padding(6)
           }
-          .frame(maxHeight: 200)
           
           Rectangle()
             .fill(Color.white.opacity(0.08))
@@ -229,13 +271,14 @@ struct CommandInputBar: View {
 
             AutocompleteTextField(
               text: $commandText,
+              height: $inputHeight,
               placeholder: "Run a command...",
               currentDirectory: session.currentDirectory,
-              isFocused: isFieldFocused,
+              isFocused: session.isFieldFocused,
               session: session,
               onSubmit: submit
             )
-            .frame(height: 22)
+            .frame(height: inputHeight)
           }
 
           Button(action: submit) {
@@ -277,21 +320,21 @@ struct CommandInputBar: View {
       .shadow(color: Color.black.opacity(0.4), radius: 15, x: 0, y: 8)
     }
     .onAppear {
-      isFieldFocused = false
+      session.isFieldFocused = false
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-        isFieldFocused = true
+        session.isFieldFocused = true
       }
     }
     .onChange(of: session.id) { _, _ in
-      isFieldFocused = false
+      session.isFieldFocused = false
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-        isFieldFocused = true
+        session.isFieldFocused = true
       }
     }
     .onChange(of: session.blocks.count) { _, _ in
-      isFieldFocused = false
+      session.isFieldFocused = false
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-        isFieldFocused = true
+        session.isFieldFocused = true
       }
     }
   }

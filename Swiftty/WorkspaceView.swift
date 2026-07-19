@@ -5,6 +5,9 @@ struct WorkspaceView: View {
   @State private var sidebarSearch = ""
   @State private var commandText = ""
 
+  @State private var sessionToClose: TerminalSession? = nil
+  @State private var showCloseAlert = false
+
   private let workspaceDirectory: String
 
   init() {
@@ -19,24 +22,171 @@ struct WorkspaceView: View {
     _sessionStore = StateObject(wrappedValue: TerminalSessionStore(currentDirectory: directory))
   }
 
-  var body: some View {
-    NavigationSplitView {
-      SessionSidebar(
-        sessions: sessionStore.sessions,
-        selectedID: $sessionStore.selectedID,
-        searchText: $sidebarSearch,
-        onNewSession: sessionStore.addSession
-      )
-      .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 360)
-    } detail: {
-      TerminalWorkspace(
-        sessions: sessionStore.sessions,
-        selectedID: sessionStore.selectedID,
-        commandText: $commandText
-      )
+  private func attemptCloseSession(_ session: TerminalSession) {
+    if session.blocks.contains(where: { $0.isRunning }) {
+      sessionToClose = session
+      showCloseAlert = true
+    } else {
+      sessionStore.closeSession(session)
     }
-    .frame(minWidth: 1_000, minHeight: 700)
-    .background(Color.swCanvas)
+  }
+
+  var body: some View {
+    ZStack {
+      // Invisible background buttons for global window-level keyboard shortcuts
+      Group {
+        // ⌘T: New session
+        Button("") { sessionStore.addSession() }
+          .keyboardShortcut("t", modifiers: .command)
+        
+        // ⌘W: Close active session
+        Button("") {
+          if let sel = sessionStore.selectedSession {
+            attemptCloseSession(sel)
+          }
+        }
+        .keyboardShortcut("w", modifiers: .command)
+        
+        // ⇧⌘T: Restore last closed session
+        Button("") { sessionStore.restoreLastClosedSession() }
+          .keyboardShortcut("t", modifiers: [.command, .shift])
+        
+        // ⌘[: Select previous session
+        Button("") {
+          let sessions = sessionStore.sessions
+          guard !sessions.isEmpty, let selID = sessionStore.selectedID,
+                let idx = sessions.firstIndex(where: { $0.id == selID }) else { return }
+          let prevIdx = (idx - 1 + sessions.count) % sessions.count
+          sessionStore.selectedID = sessions[prevIdx].id
+        }
+        .keyboardShortcut("[", modifiers: .command)
+
+        // ⌘]: Select next session
+        Button("") {
+          let sessions = sessionStore.sessions
+          guard !sessions.isEmpty, let selID = sessionStore.selectedID,
+                let idx = sessions.firstIndex(where: { $0.id == selID }) else { return }
+          let nextIdx = (idx + 1) % sessions.count
+          sessionStore.selectedID = sessions[nextIdx].id
+        }
+        .keyboardShortcut("]", modifiers: .command)
+        
+        // ⌘K: Clear history blocks of active session
+        Button("") {
+          if let session = sessionStore.selectedSession {
+            session.blocks.removeAll()
+            session.selectedBlockIDs.removeAll()
+          }
+        }
+        .keyboardShortcut("k", modifiers: .command)
+        
+        // ⌘L: Focus bottom input bar
+        Button("") {
+          sessionStore.selectedSession?.isFieldFocused = true
+        }
+        .keyboardShortcut("l", modifiers: .command)
+        
+        // ⌘F: Focus active block filter
+        Button("") {
+          if let session = sessionStore.selectedSession, let lastBlock = session.blocks.last {
+            // Set search active
+            if let idx = session.blocks.firstIndex(where: { $0.id == lastBlock.id }) {
+              let updatedBlock = CommandBlock(
+                id: lastBlock.id,
+                directory: lastBlock.directory,
+                command: lastBlock.command,
+                handle: lastBlock.handle,
+                startTime: lastBlock.startTime,
+                duration: lastBlock.duration,
+                gitInfo: lastBlock.gitInfo,
+                isRunning: lastBlock.isRunning,
+                isError: lastBlock.isError,
+                exitCode: lastBlock.exitCode,
+                staticOutput: lastBlock.staticOutput,
+                isFilterActive: true
+              )
+              session.blocks[idx] = updatedBlock
+            }
+          }
+        }
+        .keyboardShortcut("f", modifiers: .command)
+        
+        // Esc: Dismiss autocomplete/history/filters
+        Button("") {
+          if let session = sessionStore.selectedSession {
+            session.isAutocompleteOpen = false
+            session.isHistoryOpen = false
+            session.selectedBlockIDs.removeAll()
+            // Dismiss filters of all blocks
+            for i in 0..<session.blocks.count {
+              let b = session.blocks[i]
+              if b.isFilterActive {
+                session.blocks[i] = CommandBlock(
+                  id: b.id,
+                  directory: b.directory,
+                  command: b.command,
+                  handle: b.handle,
+                  startTime: b.startTime,
+                  duration: b.duration,
+                  gitInfo: b.gitInfo,
+                  isRunning: b.isRunning,
+                  isError: b.isError,
+                  exitCode: b.exitCode,
+                  staticOutput: b.staticOutput,
+                  isFilterActive: false
+                )
+              }
+            }
+          }
+        }
+        .keyboardShortcut(.cancelAction)
+
+        // ⌘1 to ⌘9: Select Tab 1 to 9
+        ForEach(1...9, id: \.self) { num in
+          Button("") {
+            if num <= sessionStore.sessions.count {
+              sessionStore.selectedID = sessionStore.sessions[num - 1].id
+            }
+          }
+          .keyboardShortcut(KeyEquivalent(Character(String(num))), modifiers: .command)
+        }
+      }
+      .opacity(0)
+      .allowsHitTesting(false)
+      .frame(width: 0, height: 0)
+
+      NavigationSplitView {
+        SessionSidebar(
+          sessions: sessionStore.sessions,
+          selectedID: $sessionStore.selectedID,
+          searchText: $sidebarSearch,
+          onNewSession: sessionStore.addSession,
+          onCloseSession: attemptCloseSession
+        )
+        .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 360)
+      } detail: {
+        TerminalWorkspace(
+          sessions: sessionStore.sessions,
+          selectedID: sessionStore.selectedID,
+          commandText: $commandText
+        )
+      }
+      .frame(minWidth: 1_000, minHeight: 700)
+      .background(Color.swCanvas)
+    }
+    .alert("Active Commands Running", isPresented: $showCloseAlert) {
+      Button("Close Session", role: .destructive) {
+        if let session = sessionToClose {
+          sessionStore.closeSession(session)
+        }
+        sessionToClose = nil
+      }
+      Button("Cancel", role: .cancel) {
+        sessionToClose = nil
+      }
+    } message: {
+      Text("This tab has running commands. Closing it will terminate them.")
+    }
   }
 }
 
@@ -45,6 +195,7 @@ private struct SessionSidebar: View {
   @Binding var selectedID: UUID?
   @Binding var searchText: String
   let onNewSession: () -> Void
+  let onCloseSession: (TerminalSession) -> Void
 
   private var filteredSessions: [TerminalSession] {
     guard !searchText.isEmpty else { return sessions }
@@ -56,7 +207,7 @@ private struct SessionSidebar: View {
 
   var body: some View {
     List(filteredSessions, selection: $selectedID) { session in
-      SessionRow(session: session)
+      SessionRow(session: session, onClose: { onCloseSession(session) })
         .tag(session.id)
     }
     .listStyle(.sidebar)
@@ -74,6 +225,8 @@ private struct SessionSidebar: View {
 
 private struct SessionRow: View {
   @ObservedObject var session: TerminalSession
+  let onClose: () -> Void
+  @State private var isHovered = false
 
   var body: some View {
     HStack(spacing: 12) {
@@ -97,9 +250,22 @@ private struct SessionRow: View {
           .lineLimit(1)
       }
       Spacer(minLength: 0)
+      
+      if isHovered {
+        Button(action: onClose) {
+          Image(systemName: "xmark.circle.fill")
+            .font(.system(size: 13))
+            .foregroundStyle(Color.secondary)
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, 4)
+      }
     }
     .padding(.vertical, 6)
     .contentShape(Rectangle())
+    .onHover { hovering in
+      isHovered = hovering
+    }
   }
 }
 

@@ -9,7 +9,7 @@ struct CommandBlockView: View {
   @State private var timer: Timer? = nil
   @State private var terminalHeight: CGFloat = 30
   @State private var filterText = ""
-  @State private var isFilterActive = false
+
 
   private var isSelected: Bool { session.selectedBlockIDs.contains(block.id) }
 
@@ -72,7 +72,7 @@ struct CommandBlockView: View {
     Divider()
     Button("Find Within Block") {
       withAnimation(.easeOut(duration: 0.15)) {
-        isFilterActive = true
+        setFilterActive(true)
       }
     }
     Divider()
@@ -169,11 +169,12 @@ struct CommandBlockView: View {
               SmallIconButton(
                 systemName: "line.3.horizontal.decrease.circle",
                 help: "Filter output",
-                tint: isFilterActive ? .swMint : .swMuted
+                tint: block.isFilterActive ? .swMint : .swMuted
               ) {
                 withAnimation(.easeOut(duration: 0.15)) {
-                  isFilterActive.toggle()
-                  if !isFilterActive { filterText = "" }
+                  let nextVal = !block.isFilterActive
+                  setFilterActive(nextVal)
+                  if !nextVal { filterText = "" }
                 }
               }
             }
@@ -193,7 +194,7 @@ struct CommandBlockView: View {
       }
       .frame(height: 20)
 
-      if isFilterActive {
+      if block.isFilterActive {
         TextField("Filter output...", text: $filterText)
           .textFieldStyle(.roundedBorder)
           .font(.system(size: 11, design: .monospaced))
@@ -206,7 +207,7 @@ struct CommandBlockView: View {
         .foregroundStyle(block.isError ? Color.swCoral : Color.swMint)
         .padding(.bottom, 2)
 
-      if isFilterActive && !filterText.isEmpty {
+      if block.isFilterActive && !filterText.isEmpty {
         if let view = block.handle.view {
           let filtered = getFilteredOutput(for: view, query: filterText)
           if filtered.isEmpty {
@@ -247,7 +248,8 @@ struct CommandBlockView: View {
       }
     }
     .padding(.horizontal, 20)
-    .padding(.vertical, 14)
+    .padding(.top, 14)
+    .padding(.bottom, (isSelected && isNextSelected) ? 30 : 14)
     .background(
       UnequallyRoundedRectShape(
         topLeading: topRadius,
@@ -392,6 +394,25 @@ struct CommandBlockView: View {
       }
     }
     return allLines.joined(separator: "\n")
+  }
+
+  private func setFilterActive(_ active: Bool) {
+    guard let idx = session.blocks.firstIndex(where: { $0.id == block.id }) else { return }
+    let updatedBlock = CommandBlock(
+      id: block.id,
+      directory: block.directory,
+      command: block.command,
+      handle: block.handle,
+      startTime: block.startTime,
+      duration: block.duration,
+      gitInfo: block.gitInfo,
+      isRunning: block.isRunning,
+      isError: block.isError,
+      exitCode: block.exitCode,
+      staticOutput: block.staticOutput,
+      isFilterActive: active
+    )
+    session.blocks[idx] = updatedBlock
   }
 }
 
