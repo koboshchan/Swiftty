@@ -286,24 +286,21 @@ private struct SessionWorkspaceView: View {
                 .id(block.id)
                 .padding(.bottom, nextBlockSelected ? 0 : 16)
             }
-            Spacer(minLength: 140)
+             Spacer(minLength: 140)
+              .id("bottom_spacer")
           }
           .padding(.horizontal, 16)
           .frame(minHeight: geometry.size.height - 160, alignment: .bottom)
           .padding(.top, 16)
         }
         .onChange(of: session.blocks) { oldValue, newValue in
-          if let lastBlock = newValue.last {
-            withAnimation(.easeOut(duration: 0.2)) {
-              proxy.scrollTo(lastBlock.id, anchor: .bottom)
-            }
+          withAnimation(.easeOut(duration: 0.2)) {
+            proxy.scrollTo("bottom_spacer", anchor: .bottom)
           }
         }
         .onChange(of: session.scrollTrigger) { oldValue, newValue in
-          if let lastBlock = session.blocks.last {
-            withAnimation(.easeOut(duration: 0.15)) {
-              proxy.scrollTo(lastBlock.id, anchor: .bottom)
-            }
+          withAnimation(.easeOut(duration: 0.15)) {
+            proxy.scrollTo("bottom_spacer", anchor: .bottom)
           }
         }
         .onChange(of: session.scrollToBlockID) { oldValue, newValue in
@@ -315,9 +312,7 @@ private struct SessionWorkspaceView: View {
           }
         }
         .onAppear {
-          if let lastBlock = session.blocks.last {
-            proxy.scrollTo(lastBlock.id, anchor: .bottom)
-          }
+          proxy.scrollTo("bottom_spacer", anchor: .bottom)
         }
       }
     }

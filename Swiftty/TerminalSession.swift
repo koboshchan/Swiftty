@@ -267,7 +267,12 @@ final class TerminalSession: ObservableObject, Identifiable {
     handle.view = persistentTerminalView
     
     if let terminal = persistentTerminalView?.terminal {
-      commandStartLine = terminal.buffer.totalLinesTrimmed
+      let buffer = terminal.buffer
+      var startL = buffer.totalLinesTrimmed
+      while terminal.getScrollInvariantLine(row: startL) != nil {
+        startL += 1
+      }
+      commandStartLine = startL
     } else {
       commandStartLine = 0
     }
