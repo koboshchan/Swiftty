@@ -121,7 +121,7 @@ struct CommandInputBar: View {
             }
           }
         }
-        .glassEffect(.regular.tint(Color.white.opacity(0.015)), in: .rect(cornerRadius: 14))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
         .overlay(
           RoundedRectangle(cornerRadius: 14)
             .stroke(Color.white.opacity(0.12), lineWidth: 0.8)
@@ -234,7 +234,7 @@ struct CommandInputBar: View {
           .padding(.horizontal, 12)
           .padding(.vertical, 6)
         }
-        .glassEffect(.regular.tint(Color.white.opacity(0.015)), in: .rect(cornerRadius: 14))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
         .overlay(
           RoundedRectangle(cornerRadius: 14)
             .stroke(Color.white.opacity(0.12), lineWidth: 0.8)
@@ -312,7 +312,7 @@ struct CommandInputBar: View {
         .padding(.bottom, 14)
         .padding(.top, 8)
       }
-      .glassEffect(.regular.tint(Color.white.opacity(0.015)), in: .rect(cornerRadius: 16))
+      .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
       .overlay(
         RoundedRectangle(cornerRadius: 16)
           .stroke(Color.white.opacity(0.12), lineWidth: 0.8)
@@ -382,6 +382,6 @@ struct PromptChip: View {
     .font(.system(size: 12, weight: .medium, design: .monospaced))
     .padding(.horizontal, 9)
     .padding(.vertical, 7)
-    .glassEffect(.clear, in: .rect(cornerRadius: 10))
+    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
   }
 }

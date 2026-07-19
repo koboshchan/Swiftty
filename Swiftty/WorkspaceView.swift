@@ -286,12 +286,12 @@ private struct SessionWorkspaceView: View {
                 .id(block.id)
                 .padding(.bottom, nextBlockSelected ? 0 : 16)
             }
+            Spacer(minLength: 140)
           }
           .padding(.horizontal, 16)
           .frame(minHeight: geometry.size.height - 160, alignment: .bottom)
           .padding(.top, 16)
         }
-        .padding(.bottom, 140)
         .onChange(of: session.blocks) { oldValue, newValue in
           if let lastBlock = newValue.last {
             withAnimation(.easeOut(duration: 0.2)) {
