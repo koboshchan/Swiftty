@@ -106,47 +106,23 @@ final class TerminalSession: ObservableObject, Identifiable {
     return "~" + String(path.dropFirst(home.count))
   }
 
-  static func loadZshHistory() -> [String] {
-    let home = FileManager.default.homeDirectoryForCurrentUser.path
-    let historyPath = URL(fileURLWithPath: home).appendingPathComponent(".zsh_history").path
-    do {
-      let data = try Data(contentsOf: URL(fileURLWithPath: historyPath))
-      if let content = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .ascii) {
-        let lines = content.components(separatedBy: "\n")
-        var commands: [String] = []
-        var seen = Set<String>()
-        for line in lines.reversed() {
-          let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-          guard !trimmed.isEmpty else { continue }
-          
-          var cmd = trimmed
-          if trimmed.hasPrefix(":") {
-            let parts = trimmed.components(separatedBy: ";")
-            if parts.count >= 2 {
-              cmd = parts.dropFirst().joined(separator: ";")
-            }
-          }
-          
-          let finalCmd = cmd.trimmingCharacters(in: .whitespacesAndNewlines)
-          if !finalCmd.isEmpty && !seen.contains(finalCmd) {
-            seen.insert(finalCmd)
-            commands.append(finalCmd)
-          }
-        }
-        return commands
-      }
-    } catch {
-      // Ignore
-    }
-    return ["ls -la", "git status", "cd ~"]
-  }
-
   func openHistory(filter: String) {
-    let allHistory = TerminalSession.loadZshHistory()
+    let localHistory = blocks.map { $0.command.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+
+    var uniqueHistory: [String] = []
+    var seen = Set<String>()
+    for cmd in localHistory.reversed() {
+      if !seen.contains(cmd) {
+        seen.insert(cmd)
+        uniqueHistory.append(cmd)
+      }
+    }
+
     if filter.isEmpty {
-      historySuggestions = allHistory
+      historySuggestions = uniqueHistory
     } else {
-      historySuggestions = allHistory.filter { $0.localizedCaseInsensitiveContains(filter) }
+      historySuggestions = uniqueHistory.filter { $0.localizedCaseInsensitiveContains(filter) }
     }
     selectedHistoryIndex = historySuggestions.isEmpty ? nil : 0
     isHistoryOpen = true
