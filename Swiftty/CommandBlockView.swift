@@ -74,6 +74,7 @@ struct CommandBlockView: View {
 
   // MARK: Selection logic
   private func handleBlockClick() {
+    session.clearAllTextSelections()
     let flags = NSEvent.modifierFlags
     if flags.contains(.command) {
       // Command-click: toggle this block
@@ -202,7 +203,11 @@ struct CommandBlockView: View {
           currentDirectory: block.directory,
           command: block.command,
           handle: block.handle,
-          onClick: { handleBlockClick() }
+          onClick: { handleBlockClick() },
+          onSelectionChanged: {
+            session.selectedBlockIDs.removeAll()
+            session.lastSelectedBlockID = nil
+          }
         ) { exitCode in
           session.processTerminated(blockID: block.id, exitCode: exitCode)
         }

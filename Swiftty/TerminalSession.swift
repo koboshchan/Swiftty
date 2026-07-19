@@ -86,6 +86,12 @@ final class TerminalSession: ObservableObject, Identifiable {
   @Published var selectedHistoryIndex: Int? = nil
   @Published var historyTab: String = "All"
 
+  func clearAllTextSelections() {
+    for block in blocks {
+      block.handle.view?.selectNone()
+    }
+  }
+
   init(currentDirectory: String, ordinal: Int) {
     self.currentDirectory = currentDirectory
     self.title = TerminalSession.displayPath(currentDirectory)

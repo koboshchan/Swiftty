@@ -5,6 +5,7 @@ import SwiftUI
 
 final class SwifttyTerminalView: LocalProcessTerminalView {
   var onClick: (() -> Void)?
+  var onSelectionChanged: (() -> Void)?
 
   /// Computes the cell height from the terminal font metrics so the host
   /// can build accurate content-based frame sizes.
@@ -37,6 +38,13 @@ final class SwifttyTerminalView: LocalProcessTerminalView {
     window?.makeFirstResponder(self)
     onClick?()
     super.mouseDown(with: event)
+  }
+
+  override func mouseUp(with event: NSEvent) {
+    super.mouseUp(with: event)
+    if selectionActive {
+      onSelectionChanged?()
+    }
   }
 }
 
@@ -91,6 +99,7 @@ struct TerminalSurface: NSViewRepresentable {
   let command: String?
   let handle: TerminalHandle
   let onClick: (() -> Void)?
+  let onSelectionChanged: (() -> Void)?
   let onExit: ((Int32?) -> Void)?
 
   func makeCoordinator() -> Coordinator {
@@ -120,6 +129,7 @@ struct TerminalSurface: NSViewRepresentable {
     let container = FlippedContainerView(frame: .zero)
     let view = SwifttyTerminalView(frame: .zero)
     view.onClick = onClick
+    view.onSelectionChanged = onSelectionChanged
     handle.view = view
     view.font = NSFont.monospacedSystemFont(ofSize: 12.0, weight: .regular)
     view.lineSpacing = 1.02
