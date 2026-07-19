@@ -80,7 +80,13 @@ final class TerminalHandle {
   }
 }
 
+class FlippedContainerView: NSView {
+  override var isFlipped: Bool { true }
+}
+
 struct TerminalSurface: NSViewRepresentable {
+  typealias NSViewType = NSView
+
   let currentDirectory: String
   let command: String?
   let handle: TerminalHandle
@@ -110,7 +116,8 @@ struct TerminalSurface: NSViewRepresentable {
     }
   }
 
-  func makeNSView(context: Context) -> SwifttyTerminalView {
+  func makeNSView(context: Context) -> NSView {
+    let container = FlippedContainerView(frame: .zero)
     let view = SwifttyTerminalView(frame: .zero)
     view.onClick = onClick
     handle.view = view
@@ -120,6 +127,8 @@ struct TerminalSurface: NSViewRepresentable {
     view.nativeForegroundColor = NSColor(calibratedRed: 0.82, green: 0.89, blue: 0.89, alpha: 1)
     view.backspaceSendsControlH = false
     view.processDelegate = context.coordinator
+
+    container.addSubview(view)
 
     let args: [String]
     if let command = command {
@@ -133,12 +142,25 @@ struct TerminalSurface: NSViewRepresentable {
       args: args,
       currentDirectory: currentDirectory
     )
-    return view
+    return container
   }
 
-  func updateNSView(_ nsView: SwifttyTerminalView, context: Context) {}
+  func updateNSView(_ nsView: NSView, context: Context) {
+    guard let terminalView = nsView.subviews.first as? SwifttyTerminalView else { return }
+    let ch = terminalView.cellHeight
+    let minHeight = 24 * ch
+    let targetHeight = max(minHeight, nsView.bounds.height)
+    terminalView.frame = NSRect(
+      x: 0,
+      y: 0,
+      width: nsView.bounds.width,
+      height: targetHeight
+    )
+  }
 
-  static func dismantleNSView(_ nsView: SwifttyTerminalView, coordinator: Coordinator) {
-    nsView.terminate()
+  static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+    if let terminalView = nsView.subviews.first as? SwifttyTerminalView {
+      terminalView.terminate()
+    }
   }
 }
