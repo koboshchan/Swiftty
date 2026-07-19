@@ -20,6 +20,9 @@ struct WorkspaceView: View {
 
     self.workspaceDirectory = directory
     _sessionStore = StateObject(wrappedValue: TerminalSessionStore(currentDirectory: directory))
+    
+    // Warm up the autocomplete system commands cache asynchronously on launch
+    AutocompleteTextField.Coordinator.loadSystemCommands()
   }
 
   private func attemptCloseSession(_ session: TerminalSession) {

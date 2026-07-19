@@ -193,8 +193,8 @@ struct AutocompleteTextField: NSViewRepresentable {
       }
 
       if commandSelector == #selector(NSResponder.insertTab(_:)) ||
-         commandSelector == Selector(("insertBacktab:")) ||
-         commandSelector == Selector(("insertTabIgnoringFieldEditor:")) {
+         commandSelector == #selector(NSResponder.insertBacktab(_:)) ||
+         commandSelector == #selector(NSResponder.insertTabIgnoringFieldEditor(_:)) {
         let isShift = NSEvent.modifierFlags.contains(.shift)
         if session.isHistoryOpen {
           navigateHistory(isForward: isShift)
@@ -359,48 +359,58 @@ struct AutocompleteTextField: NSViewRepresentable {
       session.originalAutocompleteText = nil
     }
 
-    private static var commandCache: [String]? = nil
+    private static var commandCache: [String] = []
+    private static var isCommandCacheLoading = false
 
-    private static func loadSystemCommands() -> [String] {
-      if let cache = commandCache {
-        return cache
+    @discardableResult
+    static func loadSystemCommands() -> [String] {
+      if !commandCache.isEmpty {
+        return commandCache
       }
-      let fileManager = FileManager.default
-      let pathEnv = ProcessInfo.processInfo.environment["PATH"] ?? ""
-      var paths = pathEnv.components(separatedBy: ":")
-      
-      let extraPaths = [
-        "/opt/homebrew/bin",
-        "/opt/homebrew/sbin",
-        "/usr/local/bin",
-        "/usr/local/sbin",
-        "\(NSHomeDirectory())/.cargo/bin",
-        "\(NSHomeDirectory())/go/bin"
-      ]
-      for ep in extraPaths {
-        if !paths.contains(ep) {
-          paths.append(ep)
-        }
-      }
-
-      var commands = Set<String>()
-      for path in paths {
-        let dirURL = URL(fileURLWithPath: path)
-        do {
-          let contents = try fileManager.contentsOfDirectory(atPath: dirURL.path)
-          for item in contents {
-            let fullPath = dirURL.appendingPathComponent(item).path
-            if fileManager.isExecutableFile(atPath: fullPath) {
-              commands.insert(item)
+      if !isCommandCacheLoading {
+        isCommandCacheLoading = true
+        Task.detached(priority: .background) {
+          let fileManager = FileManager.default
+          let pathEnv = ProcessInfo.processInfo.environment["PATH"] ?? ""
+          var paths = pathEnv.components(separatedBy: ":")
+          
+          let extraPaths = [
+            "/opt/homebrew/bin",
+            "/opt/homebrew/sbin",
+            "/usr/local/bin",
+            "/usr/local/sbin",
+            "\(NSHomeDirectory())/.cargo/bin",
+            "\(NSHomeDirectory())/go/bin"
+          ]
+          for ep in extraPaths {
+            if !paths.contains(ep) {
+              paths.append(ep)
             }
           }
-        } catch {
-          // Ignore
+
+          var commands = Set<String>()
+          for path in paths {
+            let dirURL = URL(fileURLWithPath: path)
+            do {
+              let contents = try fileManager.contentsOfDirectory(atPath: dirURL.path)
+              for item in contents {
+                let fullPath = dirURL.appendingPathComponent(item).path
+                if fileManager.isExecutableFile(atPath: fullPath) {
+                  commands.insert(item)
+                }
+              }
+            } catch {
+              // Ignore
+            }
+          }
+          let sortedCommands = Array(commands).sorted()
+          await MainActor.run {
+            commandCache = sortedCommands
+            isCommandCacheLoading = false
+          }
         }
       }
-      let sortedCommands = Array(commands).sorted()
-      commandCache = sortedCommands
-      return sortedCommands
+      return []
     }
 
     private func isCommandPosition(text: String) -> Bool {
@@ -529,7 +539,6 @@ struct AutocompleteTextField: NSViewRepresentable {
     }
 
     private func performAutocomplete(textField: AutocompleteNSTextField) {
-      let session = parent.session
       let currentText = textField.stringValue
       let components = currentText.components(separatedBy: " ")
       guard let last = components.last, !last.isEmpty else { return }
