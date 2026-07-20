@@ -345,11 +345,13 @@ final class TerminalSession: ObservableObject, Identifiable {
     
     if let terminal = persistentTerminalView?.terminal {
       let buffer = terminal.buffer
-      var totalLines = buffer.totalLinesTrimmed
-      while terminal.getScrollInvariantLine(row: totalLines) != nil {
-        totalLines += 1
-      }
-      commandStartLine = totalLines
+      // Start capturing from the cursor's current absolute row — that's exactly
+      // where this command's output will begin. This previously counted every
+      // allocated buffer line (totalLinesTrimmed plus all the blank on-screen
+      // rows below the cursor), so the start line landed far past the real
+      // output and getRichOutput read an empty range: the block would flash the
+      // output for a frame and then render blank.
+      commandStartLine = buffer.totalLinesTrimmed + buffer.yDisp + buffer.y
     } else {
       commandStartLine = 0
     }
@@ -430,7 +432,7 @@ final class TerminalSession: ObservableObject, Identifiable {
     let linesTop = buffer.totalLinesTrimmed
     let cursorRow = linesTop + buffer.yDisp + buffer.y
     let endLine = max(startLine, min(totalLines, cursorRow))
-    
+
     var richString = AttributedString("")
     for r in startLine..<endLine {
       if let line = terminal.getScrollInvariantLine(row: r) {
@@ -488,10 +490,10 @@ final class TerminalSession: ObservableObject, Identifiable {
       }
       richString.append(AttributedString("\n"))
     }
-    
+
     return richString
   }
-  
+
   private func colorFor(_ color: Attribute.Color) -> SwiftUI.Color? {
     switch color {
     case .ansi256(let code):
@@ -585,7 +587,7 @@ extension TerminalSession: LocalProcessTerminalViewDelegate {
     case "Precmd":
       let exitCode = (payload["exit_code"] as? Int32) ?? 0
       let pwd = (payload["pwd"] as? String) ?? ""
-      
+
       DispatchQueue.main.async {
         if !pwd.isEmpty && pwd != self.currentDirectory {
           self.currentDirectory = pwd
