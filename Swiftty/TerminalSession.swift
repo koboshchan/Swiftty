@@ -438,26 +438,32 @@ final class TerminalSession: ObservableObject, Identifiable {
             }
           }
           
-          if col >= line.count {
+          var foreground = colorFor(fg)
+          var background = colorFor(bg)
+          if style.contains(.inverse) {
+            swap(&foreground, &background)
+          }
+
+          if col >= line.count && background == nil {
             runText = runText.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
           }
-          
+
           guard !runText.isEmpty else { continue }
-          
+          guard !style.contains(.invisible) else { continue }
+
           var run = AttributedString(runText)
-          switch fg {
-          case .ansi256(let c):
-            run.foregroundColor = mapAnsiColor(c)
-          case .trueColor(let red, let green, let blue):
-            run.foregroundColor = SwiftUI.Color(red: Double(red)/255, green: Double(green)/255, blue: Double(blue)/255)
-          default:
-            run.foregroundColor = .swText
+          run.foregroundColor = foreground ?? .swText
+          if let background {
+            run.backgroundColor = background
           }
-          
-          if style.contains(.bold) {
-            run.inlinePresentationIntent = .stronglyEmphasized
-          }
-          
+
+          var intent: InlinePresentationIntent = []
+          if style.contains(.bold) { intent.insert(.stronglyEmphasized) }
+          if style.contains(.italic) { intent.insert(.emphasized) }
+          if !intent.isEmpty { run.inlinePresentationIntent = intent }
+          if style.contains(.underline) { run.underlineStyle = .single }
+          if style.contains(.crossedOut) { run.strikethroughStyle = .single }
+
           richString.append(run)
         }
       }
@@ -467,6 +473,17 @@ final class TerminalSession: ObservableObject, Identifiable {
     return richString
   }
   
+  private func colorFor(_ color: Attribute.Color) -> SwiftUI.Color? {
+    switch color {
+    case .ansi256(let code):
+      return mapAnsiColor(code)
+    case .trueColor(let red, let green, let blue):
+      return SwiftUI.Color(red: Double(red) / 255, green: Double(green) / 255, blue: Double(blue) / 255)
+    case .defaultColor, .defaultInvertedColor:
+      return nil
+    }
+  }
+
   private func mapAnsiColor(_ code: UInt8) -> SwiftUI.Color {
     switch code {
     case 0: return .black
@@ -485,8 +502,18 @@ final class TerminalSession: ObservableObject, Identifiable {
     case 13: return .swViolet
     case 14: return .swTerminalCyan
     case 15: return .white
+    case 16...231:
+      // 6x6x6 RGB color cube used by the xterm 256-color palette.
+      let index = Int(code) - 16
+      let steps: [Double] = [0, 95, 135, 175, 215, 255]
+      let red = steps[index / 36]
+      let green = steps[(index / 6) % 6]
+      let blue = steps[index % 6]
+      return SwiftUI.Color(red: red / 255, green: green / 255, blue: blue / 255)
     default:
-      return .swText
+      // 232...255: grayscale ramp.
+      let level = Double(8 + (Int(code) - 232) * 10) / 255
+      return SwiftUI.Color(red: level, green: level, blue: level)
     }
   }
 }
