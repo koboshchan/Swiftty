@@ -280,7 +280,10 @@ private struct SessionWorkspaceView: View {
       ScrollViewReader { proxy in
         ScrollView {
           VStack(spacing: 0) {
-            Spacer()
+            // Flexible top spacer pushes the blocks down so the newest one
+            // rests just above the input bar when there are only a few. Once
+            // the blocks fill the height it collapses to zero and they scroll.
+            Spacer(minLength: 0)
             ForEach(Array(session.blocks.enumerated()), id: \.element.id) { idx, block in
               let nextBlockSelected = (idx < session.blocks.count - 1) &&
                                       session.selectedBlockIDs.contains(block.id) &&
@@ -289,11 +292,15 @@ private struct SessionWorkspaceView: View {
                 .id(block.id)
                 .padding(.bottom, nextBlockSelected ? 0 : 16)
             }
-             Spacer(minLength: 140)
+            // Fixed clearance so the last block clears the floating input bar
+            // overlay. Fixed (not a flexible Spacer) so it doesn't compete with
+            // the top spacer and strand the blocks in the middle.
+            Color.clear
+              .frame(height: 150)
               .id("bottom_spacer")
           }
           .padding(.horizontal, 16)
-          .frame(minHeight: geometry.size.height - 160, alignment: .bottom)
+          .frame(minHeight: geometry.size.height, alignment: .bottom)
           .padding(.top, 16)
         }
         .onChange(of: session.blocks) { oldValue, newValue in
