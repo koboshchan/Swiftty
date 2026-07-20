@@ -404,8 +404,14 @@ final class TerminalSession: ObservableObject, Identifiable {
       staticOutput: staticText
     )
     
-    // Clear terminal screen so next block starts clean
-    persistentTerminalView?.send(txt: "clear\n")
+    // Reset the shared terminal buffer so the next block starts clean.
+    // This used to send a real "clear\n" to the shell, but that round-trips
+    // through the pty and fires its own precmd hook — if the next command
+    // started before that hook landed, it got misattributed as this block's
+    // completion (via activeBlockID), completing it instantly with an empty
+    // captured range. Resetting the buffer directly is synchronous and never
+    // touches the shell, so there's no hook to race.
+    persistentTerminalView?.terminal?.resetToInitialState()
     
     // Shift focus back to text input bar
     isFieldFocused = true
