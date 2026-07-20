@@ -275,6 +275,11 @@ private struct SessionRow: View {
 private struct SessionWorkspaceView: View {
   @ObservedObject var session: TerminalSession
 
+  // Whether the scroll view is pinned near the bottom. Auto-scroll from
+  // streaming output only applies when this is true, so scrolling up to read
+  // history isn't fought by the follow-the-output behavior.
+  @State private var isNearBottom = true
+
   var body: some View {
     GeometryReader { geometry in
       ScrollViewReader { proxy in
@@ -303,12 +308,24 @@ private struct SessionWorkspaceView: View {
           .frame(minHeight: geometry.size.height, alignment: .bottom)
           .padding(.top, 16)
         }
+        .onScrollGeometryChange(for: Bool.self) { geo in
+          // Near the bottom if the remaining scroll distance is within a small
+          // threshold. Bottom-anchored content can sit a hair past the exact
+          // bottom, so a generous threshold keeps "follow output" feeling sticky.
+          geo.contentOffset.y >= geo.contentSize.height - geo.containerSize.height - 120
+        } action: { _, nearBottom in
+          isNearBottom = nearBottom
+        }
         .onChange(of: session.blocks) { oldValue, newValue in
+          // A new command (or a block completing) always jumps to the bottom.
           withAnimation(.easeOut(duration: 0.2)) {
             proxy.scrollTo("bottom_spacer", anchor: .bottom)
           }
         }
         .onChange(of: session.scrollTrigger) { oldValue, newValue in
+          // Streaming output only follows to the bottom while the user is
+          // already there — otherwise leave their scroll position alone.
+          guard isNearBottom else { return }
           withAnimation(.easeOut(duration: 0.15)) {
             proxy.scrollTo("bottom_spacer", anchor: .bottom)
           }
