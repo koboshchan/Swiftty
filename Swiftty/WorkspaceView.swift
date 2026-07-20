@@ -352,6 +352,12 @@ private struct TerminalWorkspace: View {
         ) {
           let cmd = commandText
           commandText = ""
+          selectedSession.ghostText = ""
+          selectedSession.autocompleteSuggestions = []
+          selectedSession.isAutocompleteOpen = false
+          selectedSession.selectedSuggestionIndex = nil
+          selectedSession.originalAutocompleteText = nil
+          selectedSession.autocompleteTabCount = 0
           selectedSession.runCommand(cmd)
         }
         .padding(.horizontal, 24)

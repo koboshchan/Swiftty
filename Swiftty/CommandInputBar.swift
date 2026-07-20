@@ -262,7 +262,7 @@ struct CommandInputBar: View {
         HStack(spacing: 10) {
           ZStack(alignment: .leading) {
             // Render inline ghost text completion using spaces padding
-            if !session.ghostText.isEmpty {
+            if !commandText.isEmpty && !session.ghostText.isEmpty {
               Text(String(repeating: " ", count: commandText.count) + session.ghostText)
                 .font(.system(size: 14, weight: .regular, design: .monospaced))
                 .foregroundStyle(Color.swMuted.opacity(0.6))
