@@ -381,14 +381,14 @@ final class TerminalSession: ObservableObject, Identifiable {
     }
   }
   
-  private func completeActiveCommand(exitCode: Int32) {
+  private func completeActiveCommand(exitCode: Int32, endLine: Int?) {
     guard let blockID = activeBlockID,
           let idx = blocks.firstIndex(where: { $0.id == blockID }) else { return }
-    
+
     let block = blocks[idx]
     activeBlockID = nil
-    
-    let staticText = getRichOutput(from: commandStartLine)
+
+    let staticText = getRichOutput(from: commandStartLine, to: endLine)
     let elapsed = Date().timeIntervalSince(block.startTime)
     let isError = exitCode != 0
     
@@ -421,16 +421,29 @@ final class TerminalSession: ObservableObject, Identifiable {
     updateGitInfo()
   }
   
-  private func getRichOutput(from startLine: Int) -> AttributedString {
+  /// The cursor's current absolute (scroll-invariant) row in the shared
+  /// terminal buffer, or nil if there is no terminal yet. Callers use this to
+  /// mark where a command's output ends the moment its precmd marker arrives.
+  private func currentAbsoluteCursorLine() -> Int? {
+    guard let terminal = persistentTerminalView?.terminal else { return nil }
+    let buffer = terminal.buffer
+    return buffer.totalLinesTrimmed + buffer.yDisp + buffer.y
+  }
+
+  private func getRichOutput(from startLine: Int, to explicitEnd: Int?) -> AttributedString {
     guard let view = persistentTerminalView, let terminal = view.terminal else { return AttributedString("") }
     let buffer = terminal.buffer
     var totalLines = buffer.totalLinesTrimmed
     while terminal.getScrollInvariantLine(row: totalLines) != nil {
       totalLines += 1
     }
-    
+
     let linesTop = buffer.totalLinesTrimmed
-    let cursorRow = linesTop + buffer.yDisp + buffer.y
+    // Prefer the end row snapshotted the instant the precmd marker arrived —
+    // that's the end of the command's output, before the next prompt was drawn.
+    // Falling back to the live cursor would read whatever is on screen now,
+    // which includes the freshly rendered (possibly un-blanked) shell prompt.
+    let cursorRow = explicitEnd ?? (linesTop + buffer.yDisp + buffer.y)
     let endLine = max(startLine, min(totalLines, cursorRow))
 
     var richString = AttributedString("")
@@ -588,15 +601,24 @@ extension TerminalSession: LocalProcessTerminalViewDelegate {
       let exitCode = (payload["exit_code"] as? Int32) ?? 0
       let pwd = (payload["pwd"] as? String) ?? ""
 
+      // Snapshot the cursor's absolute row now, synchronously. This runs from
+      // SwiftTerm's feed on the main thread at the exact byte position of the
+      // precmd marker — i.e. right after the command's output and before zsh
+      // draws the next prompt. Deferring this read into the async block below
+      // would instead sample the cursor once the prompt is already on screen,
+      // pulling that prompt line (which prompt themes like powerlevel10k
+      // repopulate after our blanking) into the captured block output.
+      let capturedEnd = currentAbsoluteCursorLine()
+
       DispatchQueue.main.async {
         if !pwd.isEmpty && pwd != self.currentDirectory {
           self.currentDirectory = pwd
           self.title = TerminalSession.displayPath(pwd)
           self.updateGitInfo()
         }
-        
+
         if self.activeBlockID != nil {
-          self.completeActiveCommand(exitCode: exitCode)
+          self.completeActiveCommand(exitCode: exitCode, endLine: capturedEnd)
         }
       }
     default:
@@ -620,7 +642,9 @@ extension TerminalSession: LocalProcessTerminalViewDelegate {
   func processTerminated(source: TerminalView, exitCode: Int32?) {
     DispatchQueue.main.async {
       if self.activeBlockID != nil {
-        self.completeActiveCommand(exitCode: exitCode ?? 0)
+        // No precmd marker fires when the shell process itself exits, so there
+        // is no pre-prompt snapshot — fall back to the live cursor position.
+        self.completeActiveCommand(exitCode: exitCode ?? 0, endLine: nil)
       }
     }
   }
