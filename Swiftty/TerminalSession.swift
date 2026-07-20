@@ -171,6 +171,19 @@ final class TerminalSession: ObservableObject, Identifiable {
       export RPROMPT=""
       export RPROMPT2=""
       unsetopt ZLE
+      # With ZLE off, zsh reads input via a plain blocking read and leaves
+      # character echo to the pty's cooked-mode line discipline — so every
+      # command we feed programmatically (TerminalSurface.send) gets echoed
+      # straight back into the captured output, duplicating the command text
+      # that CommandBlockView already renders in its own header. Disabling
+      # tty echo here stops that at the source.
+      stty -echo
+      # zsh prints a highlighted "%" and forces a fresh line whenever the
+      # previous command's output didn't end in a newline (PROMPT_SP/CR).
+      # That's meant for a real prompt line, which we've blanked out above,
+      # so left on it just leaks stray "%" characters into captured output.
+      unsetopt PROMPT_SP
+      unsetopt PROMPT_CR
       """
       
       try zshenvContent.write(to: tempDir.appendingPathComponent(".zshenv"), atomically: true, encoding: .utf8)
