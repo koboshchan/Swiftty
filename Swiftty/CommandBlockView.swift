@@ -386,8 +386,20 @@ struct CommandBlockView: View {
         }
       }
     }
+    .onChange(of: block.isRunning) { _, isRunning in
+      // Stop the polling timer once the command finishes. The block stays on
+      // screen after completing (isRunning flips to false but onDisappear never
+      // fires), so without this the timer keeps firing scrollTrigger every 0.1s
+      // forever — repeatedly snapping the scroll view back to the bottom and
+      // preventing the user from scrolling up through history.
+      if !isRunning {
+        timer?.invalidate()
+        timer = nil
+      }
+    }
     .onDisappear {
       timer?.invalidate()
+      timer = nil
     }
     .contentShape(Rectangle())
   }
