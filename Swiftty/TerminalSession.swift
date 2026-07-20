@@ -139,6 +139,14 @@ final class TerminalSession: ObservableObject, Identifiable {
         local hex
         hex=$(swiftty_hex_encode "$json")
         builtin printf "\\e]0;[Swiftty-JSON-Data:%s]\\a" "$hex"
+        # Re-blank the prompt every cycle: user prompt themes (e.g. powerlevel10k)
+        # register their own precmd hook while sourcing ~/.zshrc above, and that hook
+        # runs before this one and repopulates PROMPT/RPROMPT each time. Blanking
+        # only once at shell init isn't enough, so we clear it again here, last.
+        PROMPT=""
+        PS1=""
+        RPROMPT=""
+        RPROMPT2=""
       }
       
       swiftty_preexec() {
@@ -154,6 +162,15 @@ final class TerminalSession: ObservableObject, Identifiable {
       autoload -Uz add-zsh-hook
       add-zsh-hook precmd swiftty_precmd
       add-zsh-hook preexec swiftty_preexec
+      
+      export PROMPT=""
+      export PS1=""
+      export PS2=""
+      export PS3=""
+      export PS4=""
+      export RPROMPT=""
+      export RPROMPT2=""
+      unsetopt ZLE
       """
       
       try zshenvContent.write(to: tempDir.appendingPathComponent(".zshenv"), atomically: true, encoding: .utf8)
