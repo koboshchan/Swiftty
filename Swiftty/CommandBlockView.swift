@@ -42,6 +42,18 @@ struct CommandBlockView: View {
     return false
   }
 
+  // Extracted so the type-checker doesn't have to resolve this modifier chain
+  // together with the surrounding if/else branches (it times out otherwise).
+  @ViewBuilder
+  private func staticOutputView(_ output: AttributedString) -> some View {
+    Text(output)
+      .font(.system(size: 12, design: .monospaced))
+      .lineSpacing(4)
+      .textSelection(.enabled)
+      .foregroundStyle(Color.swText)
+      .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
   private func getSelectedBlocks() -> [CommandBlock] {
     if session.selectedBlockIDs.contains(block.id) {
       return session.blocks.filter { session.selectedBlockIDs.contains($0.id) }
@@ -61,7 +73,7 @@ struct CommandBlockView: View {
       for b in targetBlocks {
         let cmd = b.command
         let output: String
-        if b.isRunning, let view = b.handle.view {
+        if b.isRunning, let view = session.persistentTerminalView {
           output = getAllOutput(for: view)
         } else {
           output = b.staticOutput.map { String($0.characters) } ?? ""
@@ -83,7 +95,7 @@ struct CommandBlockView: View {
       var outputs: [String] = []
       for b in targetBlocks {
         let output: String
-        if b.isRunning, let view = b.handle.view {
+        if b.isRunning, let view = session.persistentTerminalView {
           output = getAllOutput(for: view)
         } else {
           output = b.staticOutput.map { String($0.characters) } ?? ""
@@ -169,70 +181,142 @@ struct CommandBlockView: View {
     }
   }
 
-  var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      HStack(spacing: 8) {
-        Text("base")
-          .font(.system(size: 11, weight: .bold, design: .monospaced))
-          .foregroundStyle(Color.swMuted)
+  // MARK: Body sections (kept as separate @ViewBuilder members — a single
+  // giant `body` expression makes the type-checker time out on this file).
+  @ViewBuilder
+  private var headerRow: some View {
+    HStack(spacing: 8) {
+      Text("base")
+        .font(.system(size: 11, weight: .bold, design: .monospaced))
+        .foregroundStyle(Color.swMuted)
 
-        Text(block.directory)
-          .font(.system(size: 11, weight: .regular, design: .monospaced))
-          .foregroundStyle(Color.swAmber)
-
-        if let git = block.gitInfo {
-          HStack(spacing: 4) {
-            Text("git:(\(git.branch))")
-              .foregroundStyle(Color.swMint)
-
-            let disp = git.displayString
-            if !disp.isEmpty {
-              Text(disp)
-                .foregroundStyle(Color.swMuted)
-            }
-          }
-          .font(.system(size: 11, weight: .regular, design: .monospaced))
-        }
-
-        Text(
-          block.isRunning
-            ? String(format: "(%.1fs)", elapsedDuration) : String(format: "(%.3fs)", block.duration)
-        )
+      Text(block.directory)
         .font(.system(size: 11, weight: .regular, design: .monospaced))
-        .foregroundStyle(Color.swDim)
+        .foregroundStyle(Color.swAmber)
 
-        Spacer()
+      if let git = block.gitInfo {
+        HStack(spacing: 4) {
+          Text("git:(\(git.branch))")
+            .foregroundStyle(Color.swMint)
 
-        if isHovered && !block.isRunning {
-          HStack(spacing: 6) {
-            if hasOutput {
-              SmallIconButton(
-                systemName: "line.3.horizontal.decrease.circle",
-                help: "Filter output",
-                tint: block.isFilterActive ? .swMint : .swMuted
-              ) {
-                withAnimation(.easeOut(duration: 0.15)) {
-                  let nextVal = !block.isFilterActive
-                  setFilterActive(nextVal)
-                  if !nextVal { filterText = "" }
-                }
+          let disp = git.displayString
+          if !disp.isEmpty {
+            Text(disp)
+              .foregroundStyle(Color.swMuted)
+          }
+        }
+        .font(.system(size: 11, weight: .regular, design: .monospaced))
+      }
+
+      Text(
+        block.isRunning
+          ? String(format: "(%.1fs)", elapsedDuration) : String(format: "(%.3fs)", block.duration)
+      )
+      .font(.system(size: 11, weight: .regular, design: .monospaced))
+      .foregroundStyle(Color.swDim)
+
+      Spacer()
+
+      if isHovered && !block.isRunning {
+        HStack(spacing: 6) {
+          if hasOutput {
+            SmallIconButton(
+              systemName: "line.3.horizontal.decrease.circle",
+              help: "Filter output",
+              tint: block.isFilterActive ? .swMint : .swMuted
+            ) {
+              withAnimation(.easeOut(duration: 0.15)) {
+                let nextVal = !block.isFilterActive
+                setFilterActive(nextVal)
+                if !nextVal { filterText = "" }
               }
             }
-
-            Menu { blockContextMenu() } label: {
-              Image(systemName: "ellipsis")
-                .font(.system(size: 12, weight: .medium))
-                .frame(width: 25, height: 25)
-                .foregroundStyle(Color.swMuted)
-                .contentShape(Rectangle())
-            }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
           }
-          .transition(.opacity)
+
+          Menu { blockContextMenu() } label: {
+            Image(systemName: "ellipsis")
+              .font(.system(size: 12, weight: .medium))
+              .frame(width: 25, height: 25)
+              .foregroundStyle(Color.swMuted)
+              .contentShape(Rectangle())
+          }
+          .menuStyle(.button)
+          .buttonStyle(.plain)
         }
+        .transition(.opacity)
       }
-      .frame(height: 20)
+    }
+    .frame(height: 20)
+  }
+
+  @ViewBuilder
+  private var commandLine: some View {
+    Text(block.command)
+      .font(.system(size: 13.5, weight: .bold, design: .monospaced))
+      .foregroundStyle(block.isError ? Color.swCoral : Color.swMint)
+      .padding(.bottom, 2)
+  }
+
+  private func currentOutputText() -> String {
+    if block.isRunning, let view = session.persistentTerminalView {
+      return getAllOutput(for: view)
+    }
+    return block.staticOutput.map { String($0.characters) } ?? ""
+  }
+
+  @ViewBuilder
+  private var filteredOutputView: some View {
+    let filtered = getFilteredOutput(for: currentOutputText(), query: filterText)
+    if filtered.isEmpty {
+      Text("No matches found")
+        .font(.system(size: 12, design: .monospaced))
+        .foregroundStyle(Color.swMuted)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    } else {
+      ScrollView(.horizontal) {
+        Text(filtered)
+          .font(.system(size: 12, design: .monospaced))
+          .foregroundStyle(Color.swText)
+          .lineSpacing(4)
+          .textSelection(.enabled)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .frame(maxHeight: 300)
+    }
+  }
+
+  @ViewBuilder
+  private var liveOrStaticOutputView: some View {
+    if block.isRunning, let terminalView = session.persistentTerminalView {
+      TerminalSurface(
+        terminalView: terminalView,
+        session: session,
+        onClick: { handleBlockClick() },
+        onSelectionChanged: {
+          session.selectedBlockIDs.removeAll()
+          session.lastSelectedBlockID = nil
+        }
+      )
+      .frame(height: terminalHeight)
+      .cornerRadius(8)
+    } else if hasOutput, let staticOutput = block.staticOutput {
+      staticOutputView(staticOutput)
+    }
+  }
+
+  @ViewBuilder
+  private var outputSection: some View {
+    if block.isFilterActive && !filterText.isEmpty {
+      filteredOutputView
+    } else {
+      liveOrStaticOutputView
+    }
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      headerRow
 
       if block.isFilterActive {
         TextField("Filter output...", text: $filterText)
@@ -242,54 +326,9 @@ struct CommandBlockView: View {
           .padding(.bottom, 4)
       }
 
-      Text(block.command)
-        .font(.system(size: 13.5, weight: .bold, design: .monospaced))
-        .foregroundStyle(block.isError ? Color.swCoral : Color.swMint)
-        .padding(.bottom, 2)
+      commandLine
 
-      if block.isFilterActive && !filterText.isEmpty {
-        if let view = block.handle.view {
-          let filtered = getFilteredOutput(for: view, query: filterText)
-          if filtered.isEmpty {
-            Text("No matches found")
-              .font(.system(size: 12, design: .monospaced))
-              .foregroundStyle(Color.swMuted)
-              .padding(.vertical, 8)
-              .frame(maxWidth: .infinity, alignment: .leading)
-          } else {
-            ScrollView(.horizontal) {
-              Text(filtered)
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(Color.swText)
-                .lineSpacing(4)
-                .textSelection(.enabled)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(maxHeight: 300)
-          }
-        }
-      } else {
-        if block.isRunning, let terminalView = session.persistentTerminalView {
-          TerminalSurface(
-            terminalView: terminalView,
-            session: session,
-            onClick: { handleBlockClick() },
-            onSelectionChanged: {
-              session.selectedBlockIDs.removeAll()
-              session.lastSelectedBlockID = nil
-            }
-          )
-          .frame(height: terminalHeight)
-          .cornerRadius(8)
-        } else if hasOutput, let staticOutput = block.staticOutput {
-          Text(staticOutput)
-            .font(.system(size: 12, design: .monospaced))
-            .lineSpacing(4)
-            .textSelection(.enabled)
-            .foregroundStyle(Color.swText)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-      }
+      outputSection
     }
     .padding(.horizontal, 20)
     .padding(.top, 14)
@@ -334,7 +373,7 @@ struct CommandBlockView: View {
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
           DispatchQueue.main.async {
             elapsedDuration = Date().timeIntervalSince(block.startTime)
-            if let view = block.handle.view {
+            if let view = session.persistentTerminalView {
               let computedHeight = computeHeight(for: view)
               // Only grow during running — never shrink, to prevent jumping
               if computedHeight > terminalHeight {
@@ -345,29 +384,10 @@ struct CommandBlockView: View {
             session.scrollTrigger = UUID()
           }
         }
-      } else {
-        // Already finished — set final height
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-          if let view = block.handle.view {
-            terminalHeight = computeHeight(for: view)
-            session.scrollTrigger = UUID()
-          }
-        }
       }
     }
     .onDisappear {
       timer?.invalidate()
-    }
-    .onChange(of: block.isRunning) { oldValue, newValue in
-      if !newValue {
-        timer?.invalidate()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-          if let view = block.handle.view {
-            terminalHeight = computeHeight(for: view)
-            session.scrollTrigger = UUID()
-          }
-        }
-      }
     }
     .contentShape(Rectangle())
   }
@@ -399,25 +419,9 @@ struct CommandBlockView: View {
     return max(CGFloat(contentRows) * ch, ch)
   }
 
-  private func getFilteredOutput(for view: SwifttyTerminalView, query: String) -> String {
-    guard let terminal = view.terminal else { return "" }
-    let buffer = terminal.buffer
-    let linesTop = buffer.totalLinesTrimmed
-    
-    var totalLines = linesTop
-    while terminal.getScrollInvariantLine(row: totalLines) != nil {
-      totalLines += 1
-    }
-    
-    var matchingLines: [String] = []
-    for r in linesTop..<totalLines {
-      if let line = terminal.getScrollInvariantLine(row: r) {
-        let text = line.translateToString(trimRight: true)
-        if text.localizedCaseInsensitiveContains(query) {
-          matchingLines.append(text)
-        }
-      }
-    }
+  private func getFilteredOutput(for text: String, query: String) -> String {
+    let lines = text.components(separatedBy: "\n")
+    let matchingLines = lines.filter { $0.localizedCaseInsensitiveContains(query) }
     return matchingLines.joined(separator: "\n")
   }
 
