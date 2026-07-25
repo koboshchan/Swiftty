@@ -527,10 +527,18 @@ final class BlockTracker: ObservableObject {
         return operands.count == 1
     }
 
+    /// Prompt-ending characters. The plain-shell set (`$ % # >`) plus the
+    /// glyphs the popular prompt themes end with — Starship and pure use `❯`,
+    /// oh-my-zsh `➜`, others `» λ →`. Missing these meant a remote host with a
+    /// themed prompt never got warpified, so its commands never became blocks.
+    private static let promptEndings: Set<Character> = [
+        "$", "%", "#", ">", "❯", "➜", "»", "λ", "→", "✗", "❱",
+    ]
+
     private static func looksLikePrompt(_ line: String?) -> Bool {
         guard let line else { return false }
         let trimmed = line.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return false }
+        guard let last = trimmed.last else { return false }
         // A question is not a prompt. Typing into one would send a page of
         // shell functions somewhere it must never go.
         let lowered = trimmed.lowercased()
@@ -538,7 +546,7 @@ final class BlockTracker: ObservableObject {
         where lowered.contains(probe) {
             return false
         }
-        return "$%#>".contains(trimmed.last ?? " ")
+        return promptEndings.contains(last)
     }
 
     /// The last row of the terminal that has anything on it.
