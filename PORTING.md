@@ -109,3 +109,16 @@ than at the finish marker — clearing at the finish would wipe the fresh prompt
 the shell is about to draw. Each block therefore owns its text outright, and the
 live terminal only ever holds the command in progress. A full-screen program
 taking over the alternate screen hands it the whole view until it exits.
+
+## Performance
+
+Metal rendering runs in `.perRowPersistent` mode: only rows that changed are
+rebuilt each frame, which is the cheaper mode for interactive use (typing,
+scrolling output) where a handful of rows are dirty per frame. The MTKView is
+on-demand (`isPaused`, `enableSetNeedsDisplay`), so an idle prompt uses no CPU.
+
+The per-repaint path is kept minimal: the transparency heal is a single identity
+check against the last-fixed Metal view rather than a subview scan, and the
+command editor re-measures its height only when the font actually changes, not on
+every SwiftUI update. A steady cursor (Settings → Terminal) stops the caret
+redrawing twice a second, which otherwise wakes the GPU even at idle.

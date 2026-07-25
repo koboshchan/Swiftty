@@ -1164,7 +1164,7 @@ struct TerminalTabStrip: View {
             }
         }
         .frame(maxWidth: 420, alignment: .leading)
-        .animation(.spring(response: 0.32, dampingFraction: 0.78), value: store.tabs.map(\.id))
+        .animation(.spring(response: 0.32, dampingFraction: 0.78), value: store.tabs.count)
         .animation(.easeOut(duration: 0.18), value: store.activeTabID)
     }
 }
@@ -2488,7 +2488,12 @@ struct TerminalSessionView: NSViewRepresentable {
         terminal.nativeForegroundColor = NSColor(calibratedWhite: 0.92, alpha: 1)
         terminal.caretColor = .systemGreen
         terminal.caretViewTracksFocus = true
-        terminal.metalBufferingMode = .perFrameAggregated
+        // Rebuild only the rows that changed, rather than the whole screen every
+        // frame. This is the cheaper mode for interactive use — typing, scrolling
+        // output — which is nearly all of ours; only a handful of rows are dirty
+        // per frame. `.perFrameAggregated` suits a TUI that repaints everything,
+        // but even then this only rebuilds what actually changed.
+        terminal.metalBufferingMode = .perRowPersistent
         try? terminal.setUseMetal(true)
         // After setUseMetal, so there is an MTKView to make non-opaque.
         terminal.applyBackground(opacity: preferences.windowOpacity)
@@ -2526,6 +2531,8 @@ struct TerminalSessionView: NSViewRepresentable {
             currentDirectory: ShellInfo.homePath
         )
 
+        terminal.setCursorBlink(preferences.terminalCursorBlink)
+
         DispatchQueue.main.async {
             guard isActive, wantsFocus else { return }
             terminal.window?.makeFirstResponder(terminal)
@@ -2537,6 +2544,7 @@ struct TerminalSessionView: NSViewRepresentable {
         context.coordinator.onTitle = onTitle
         context.coordinator.onDirectory = onDirectory
         context.coordinator.onExit = onExit
+        terminal.setCursorBlink(preferences.terminalCursorBlink)
         terminal.font = NSFont.monospacedSystemFont(ofSize: preferences.terminalFontSize, weight: .regular)
         terminal.applyBackground(opacity: preferences.windowOpacity)
 

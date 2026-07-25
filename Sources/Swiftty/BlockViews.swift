@@ -55,21 +55,44 @@ final class SwifttyTerminalView: LocalProcessTerminalView {
         }
     }
 
+    /// The Metal view whose transparency has already been set, so the per-frame
+    /// heal below can skip the moment nothing has changed.
+    private weak var healedMetalView: MTKView?
+
     /// Reapplies transparency if SwiftTerm has swapped in a new Metal view.
     ///
     /// Setting it once at creation is not enough: attaching to a window rebuilds
     /// the `MTKView`, and the replacement arrives opaque, which is what left the
     /// terminal a solid black band while the rest of the window was see-through.
+    ///
+    /// This runs on every repaint, so it must stay cheap: it only acts when the
+    /// current Metal view is one it has not already fixed. In the steady state —
+    /// which is every frame of output — it is a single identity comparison.
     private func healTransparencyIfNeeded() {
         guard backgroundOpacity < 0.99 else { return }
-        let needsHealing = subviews.contains { subview in
-            subview is MTKView && (subview.layer?.isOpaque ?? false)
-        }
-        if needsHealing { applyBackground(opacity: backgroundOpacity) }
+        let current = subviews.first { $0 is MTKView } as? MTKView
+        guard current !== healedMetalView else { return }
+        applyBackground(opacity: backgroundOpacity)
+        healedMetalView = current
+    }
+
+    private var cursorBlinks = true
+
+    /// Steady vs blinking block cursor, via the standard DECSCUSR sequence.
+    ///
+    /// A blinking caret redraws the view twice a second forever, waking the GPU
+    /// even at an idle prompt — so honouring "steady" is a real, if small,
+    /// energy win, not only a cosmetic preference. Programs can still override
+    /// with their own DECSCUSR; this just sets the default.
+    func setCursorBlink(_ blinks: Bool) {
+        guard blinks != cursorBlinks else { return }
+        cursorBlinks = blinks
+        terminal?.feed(text: blinks ? "\u{1b}[1 q" : "\u{1b}[2 q")
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        healedMetalView = nil
         applyBackground(opacity: backgroundOpacity)
     }
 
@@ -389,7 +412,10 @@ struct BlockStack<Terminal: View>: View {
                             ))
                     }
                 }
-                .animation(.easeOut(duration: 0.22), value: tracker.blocks.map(\.id))
+                // Keyed on count, not a mapped id array: blocks only ever
+                // append or trim from the front, so count captures every change
+                // without allocating an array of every id each render.
+                .animation(.easeOut(duration: 0.22), value: tracker.blocks.count)
                 .padding(.bottom, tracker.runningBlock == nil && !tracker.isSubmitting ? composerHeight : 0)
             }
             // Blocks stack up from the bottom, so they meet the prompt sitting

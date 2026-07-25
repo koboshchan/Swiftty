@@ -54,7 +54,17 @@ struct CommandEditor: NSViewRepresentable {
 
     func updateNSView(_ view: CommandTextView, context: Context) {
         context.coordinator.parent = self
-        view.font = .monospacedSystemFont(ofSize: fontSize, weight: .regular)
+
+        // The font only changes when the size does, but setting it re-lays out
+        // the text — so touch it only when it actually differs, and re-measure
+        // the height just then. Typing reports its own height from
+        // textDidChange, so the common update path does no measuring at all.
+        let fontChanged = context.coordinator.lastFontSize != fontSize
+        if fontChanged {
+            context.coordinator.lastFontSize = fontSize
+            view.font = .monospacedSystemFont(ofSize: fontSize, weight: .regular)
+            view.applyHighlighting()
+        }
 
         // An explicit request wins outright — it means something that had the
         // keyboard, the find bar say, has just gone away and the caret belongs
@@ -76,11 +86,13 @@ struct CommandEditor: NSViewRepresentable {
             view.needsDisplay = true
         }
 
-        DispatchQueue.main.async {
-            let height = view.contentHeight
-            if abs(height - context.coordinator.lastReportedHeight) > 0.5 {
-                context.coordinator.lastReportedHeight = height
-                onHeightChange(height)
+        if fontChanged {
+            DispatchQueue.main.async {
+                let height = view.contentHeight
+                if abs(height - context.coordinator.lastReportedHeight) > 0.5 {
+                    context.coordinator.lastReportedHeight = height
+                    onHeightChange(height)
+                }
             }
         }
     }
@@ -90,6 +102,7 @@ struct CommandEditor: NSViewRepresentable {
         var parent: CommandEditor
         var lastReportedHeight: CGFloat = 0
         var lastFocusRequest = 0
+        var lastFontSize: Double = 0
 
         init(_ parent: CommandEditor) { self.parent = parent }
 
