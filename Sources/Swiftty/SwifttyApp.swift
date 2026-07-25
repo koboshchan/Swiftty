@@ -165,6 +165,19 @@ final class AppPreferences: ObservableObject {
     @Published var terminalFontSize: Double {
         didSet { persist("terminalFontSize", terminalFontSize) }
     }
+
+    /// Bounds the font can be nudged between with ⌘+/⌘-.
+    static let fontSizeRange: ClosedRange<Double> = 9...28
+    private static let defaultFontSize: Double = 13
+
+    func adjustFontSize(by delta: Double) {
+        terminalFontSize = min(max(terminalFontSize + delta, Self.fontSizeRange.lowerBound),
+                               Self.fontSizeRange.upperBound)
+    }
+
+    func resetFontSize() {
+        terminalFontSize = Self.defaultFontSize
+    }
     @Published var terminalCursorBlink: Bool {
         didSet { persist("terminalCursorBlink", terminalCursorBlink) }
     }
@@ -599,6 +612,30 @@ struct SwifttyApp: App {
         // that row carries a leading inset wide enough to clear them.
         .windowStyle(.hiddenTitleBar)
         .commands {
+            CommandGroup(after: .toolbar) {
+                // "+" is Shift-"=", so binding "+" alone would demand Shift.
+                // Binding the bare "=" as well means ⌘= works without it — the
+                // way every browser and editor lets you zoom.
+                Button("Increase Text Size") {
+                    preferences.adjustFontSize(by: 1)
+                }
+                .keyboardShortcut("+", modifiers: .command)
+                Button("Increase Text Size") {
+                    preferences.adjustFontSize(by: 1)
+                }
+                .keyboardShortcut("=", modifiers: .command)
+
+                Button("Decrease Text Size") {
+                    preferences.adjustFontSize(by: -1)
+                }
+                .keyboardShortcut("-", modifiers: .command)
+
+                Button("Reset Text Size") {
+                    preferences.resetFontSize()
+                }
+                .keyboardShortcut("0", modifiers: .command)
+            }
+
             CommandGroup(after: .newItem) {
                 Button("New Tab") {
                     store.newTab()
@@ -1069,6 +1106,17 @@ struct SidebarResizer: View {
     }
 }
 
+/// A plain button that dips and dims slightly while pressed, so every control
+/// gives a bit of tactile feedback instead of firing dead.
+struct PressableStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.86 : 1)
+            .opacity(configuration.isPressed ? 0.6 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
 struct ChromeButton: View {
     let systemName: String
     let help: String
@@ -1079,10 +1127,10 @@ struct ChromeButton: View {
             Image(systemName: systemName)
                 .font(.system(size: 14, weight: .medium))
                 .frame(width: 26, height: 26)
+                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableStyle())
         .foregroundStyle(.secondary)
-        .contentShape(Rectangle())
         .help(help)
     }
 }
@@ -1092,7 +1140,6 @@ struct TerminalTabStrip: View {
     @EnvironmentObject private var store: TerminalStore
 
     var body: some View {
-        Group {
         HStack(spacing: 4) {
             ForEach(store.tabs) { tab in
                 TerminalTabButton(
@@ -1100,14 +1147,25 @@ struct TerminalTabStrip: View {
                     isActive: tab.id == store.activeTabID,
                     onSelect: { store.select(tab.id) }
                 )
+                // A new tab grows in from the trailing edge; a closed one
+                // collapses away, so the strip reshuffles smoothly instead of
+                // snapping.
+                .transition(.asymmetric(
+                    insertion: .scale(scale: 0.8, anchor: .leading)
+                        .combined(with: .opacity)
+                        .combined(with: .move(edge: .leading)),
+                    removal: .scale(scale: 0.8, anchor: .center)
+                        .combined(with: .opacity)
+                ))
             }
 
             ChromeButton(systemName: "plus", help: "New tab") {
                 store.newTab()
             }
         }
-        }
         .frame(maxWidth: 420, alignment: .leading)
+        .animation(.spring(response: 0.32, dampingFraction: 0.78), value: store.tabs.map(\.id))
+        .animation(.easeOut(duration: 0.18), value: store.activeTabID)
     }
 }
 
@@ -1135,13 +1193,16 @@ struct TerminalTabButton: View {
             .frame(height: 30)
             .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableStyle())
         .foregroundStyle(isActive ? .primary : .secondary)
-        .background(isActive ? Color.white.opacity(0.08) : Color.clear)
+        .background(
+            Capsule().fill(Color.white.opacity(isActive ? 0.08 : 0))
+        )
         .clipShape(Capsule())
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Terminal tab " + tracker.tabLabel)
         .animation(.easeOut(duration: 0.15), value: tracker.tabLabel)
+        .animation(.easeOut(duration: 0.2), value: isActive)
     }
 }
 
@@ -1181,6 +1242,10 @@ struct WorkspaceMain: View {
                             onExit: { store.markExited(for: tab.id, code: $0) }
                         )
                     )
+                    // The active tab fades to the front; the rest fade back.
+                    // No scale transform here — a fractional scale on the
+                    // AppKit-backed terminal keeps AppKit re-running autolayout
+                    // every frame, burning CPU at idle. Opacity alone is free.
                     .opacity(tab.id == store.activeTabID ? 1 : 0)
                     .allowsHitTesting(tab.id == store.activeTabID)
                     .accessibilityHidden(tab.id != store.activeTabID)
@@ -1188,6 +1253,7 @@ struct WorkspaceMain: View {
             }
             .padding(.top, 6)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(.easeOut(duration: 0.18), value: store.activeTabID)
 
             if store.aiPanelVisible {
                 Divider()
@@ -1292,21 +1358,26 @@ struct WorkspaceSidebar: View {
                 }
             }
 
-            if activeView == .files {
-                FileExplorerPreview(model: explorerModel)
-            } else {
-                VStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle")
-                        .font(.system(size: 20))
-                        .foregroundStyle(.secondary)
-                    Text("No changes")
-                        .font(.system(size: 12, weight: .medium))
-                    Text("Source control will appear here")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+            ZStack {
+                if activeView == .files {
+                    FileExplorerPreview(model: explorerModel)
+                        .transition(.opacity)
+                } else {
+                    VStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle")
+                            .font(.system(size: 20))
+                            .foregroundStyle(.secondary)
+                        Text("No changes")
+                            .font(.system(size: 12, weight: .medium))
+                        Text("Source control will appear here")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(.opacity)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .animation(.easeOut(duration: 0.18), value: activeView)
 
             Group {
                 HStack(spacing: 3) {
@@ -1487,10 +1558,11 @@ struct SidebarRailButton: View {
                 .padding(.vertical, 7)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableStyle())
         .foregroundStyle(isActive ? Color.primary : Color.secondary)
-        .background(isActive ? Color.white.opacity(0.08) : Color.clear)
+        .background(Capsule().fill(Color.white.opacity(isActive ? 0.08 : 0)))
         .clipShape(Capsule())
+        .animation(.easeOut(duration: 0.18), value: isActive)
     }
 }
 

@@ -106,9 +106,18 @@ private enum BlockStyle {
     static func headerGap(compact: Bool) -> CGFloat { compact ? 3 : 8 }
     static func outputGap(compact: Bool) -> CGFloat { compact ? 5 : 15 }
 
-    static let metaFont = Font.system(size: 12, design: .monospaced)
-    static let commandFont = Font.system(size: 13, weight: .bold, design: .monospaced)
-    static let outputFont = Font.system(size: 13, design: .monospaced)
+    // Sized off the user's chosen font so ⌘+/⌘- scale the whole block, not
+    // just the live terminal. Output matches the terminal exactly; the command
+    // is a touch larger and bold, the meta line a touch smaller and muted.
+    static func outputFont(_ size: Double) -> Font {
+        .system(size: size, design: .monospaced)
+    }
+    static func commandFont(_ size: Double) -> Font {
+        .system(size: size + 1, weight: .bold, design: .monospaced)
+    }
+    static func metaFont(_ size: Double) -> Font {
+        .system(size: max(9, size - 2), design: .monospaced)
+    }
 
     static let failure = SwiftUI.Color(red: 0.95, green: 0.45, blue: 0.42)
     static let meta = SwiftUI.Color(red: 0.55, green: 0.56, blue: 0.60)
@@ -762,14 +771,14 @@ struct BlockStack<Terminal: View>: View {
                 // room in the first place.
                 HStack(spacing: 9) {
                     Text(running.command)
-                        .font(BlockStyle.commandFont)
+                        .font(BlockStyle.commandFont(preferences.terminalFontSize))
                         .foregroundStyle(BlockStyle.command)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .textSelection(.enabled)
 
                     Text(running.metaLabel)
-                        .font(BlockStyle.metaFont)
+                        .font(BlockStyle.metaFont(preferences.terminalFontSize))
                         .foregroundStyle(BlockStyle.meta)
                         .lineLimit(1)
                         .truncationMode(.head)
@@ -836,7 +845,7 @@ private struct BlockView: View {
             header
 
             if block.hasOutput {
-                BlockOutput(block: block, searchQuery: searchQuery)
+                BlockOutput(block: block, searchQuery: searchQuery, fontSize: preferences.terminalFontSize)
                     .padding(.top, BlockStyle.outputGap(compact: preferences.compactBlocks))
             }
         }
@@ -868,13 +877,13 @@ private struct BlockView: View {
         HStack(alignment: .top, spacing: 8) {
             VStack(alignment: .leading, spacing: BlockStyle.headerGap(compact: preferences.compactBlocks)) {
                 Text(block.metaLabel)
-                    .font(BlockStyle.metaFont)
+                    .font(BlockStyle.metaFont(preferences.terminalFontSize))
                     .foregroundStyle(block.state.failed ? BlockStyle.failure.opacity(0.9) : BlockStyle.meta)
                     .lineLimit(1)
                     .truncationMode(.head)
 
                 Text(SearchHighlight.mark(block.command, query: searchQuery))
-                    .font(BlockStyle.commandFont)
+                    .font(BlockStyle.commandFont(preferences.terminalFontSize))
                     .foregroundStyle(BlockStyle.command)
                     .lineLimit(2)
                     .textSelection(.enabled)
@@ -920,6 +929,7 @@ private struct BlockChrome: ViewModifier {
 private struct BlockOutput: View {
     let block: CommandBlock
     var searchQuery: String = ""
+    var fontSize: Double = 13
 
     @State private var isExpanded = false
 
@@ -929,7 +939,7 @@ private struct BlockOutput: View {
                 isExpanded ? block.output : block.outputPreview,
                 query: searchQuery
             ))
-                .font(BlockStyle.outputFont)
+                .font(BlockStyle.outputFont(fontSize))
                 .lineSpacing(2)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
