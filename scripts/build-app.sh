@@ -19,12 +19,14 @@ mkdir -p "$APP_DIR/Contents/MacOS"
 cp "$BIN_DIR/Swiftty" "$APP_DIR/Contents/MacOS/Swiftty"
 cp "$ROOT_DIR/Info.plist" "$APP_DIR/Contents/Info.plist"
 
-# SwiftTerm resolves its Metal shaders through Bundle.module. SwiftPM places
-# that resource bundle next to the executable, but a hand-assembled .app must
-# place it in Contents/Resources for Bundle.module to find it.
+# SwiftPM places every target's resource bundle next to the executable. A
+# hand-assembled .app must move them all into Contents/Resources so each
+# target's Bundle.module accessor can resolve its own resources.
 RESOURCE_DIR="$APP_DIR/Contents/Resources"
 mkdir -p "$RESOURCE_DIR"
-cp -R "$BIN_DIR/SwiftTerm_SwiftTerm.bundle" "$RESOURCE_DIR/"
+for bundle in "$BIN_DIR"/*.bundle(N); do
+  cp -R "$bundle" "$RESOURCE_DIR/"
+done
 
 # Re-sign after assembling the bundle so macOS validates the binary and
 # Info.plist together at launch.
