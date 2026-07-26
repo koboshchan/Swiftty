@@ -1229,11 +1229,13 @@ struct WorkspaceMain: View {
                         terminal: TerminalSessionView(
                             tabID: tab.id,
                             isActive: tab.id == store.activeTabID,
-                            // While the shell waits at a prompt the editor owns
-                            // the keyboard; the terminal takes it back for a
-                            // running command, a full-screen program, or a shell
-                            // we could not instrument.
-                            wantsFocus: tracker.runningBlock != nil
+                            // The editor owns the keyboard until a command runs
+                            // long enough to be shown live; the terminal takes it
+                            // back then, for a full-screen program, or for a
+                            // shell we could not instrument. Keying on
+                            // runningVisible rather than runningBlock keeps the
+                            // editor focused through quick commands.
+                            wantsFocus: tracker.runningVisible
                                 || tracker.isAlternateScreen
                                 || !tracker.isIntegrationActive,
                             tracker: tracker,

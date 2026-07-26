@@ -120,7 +120,33 @@ final class BlockTracker: ObservableObject {
     /// here — it is live in the terminal, and `runningBlock` describes it.
     @Published private(set) var blocks: [CommandBlock] = []
     /// The command executing right now, if any.
-    @Published private(set) var runningBlock: CommandBlock?
+    ///
+    /// `runningVisible` trails it: a command has to run for a moment before the
+    /// terminal expands to show it live. Most commands finish in well under
+    /// that, so they append their block without the live view ever flashing —
+    /// which is what stopped every command flickering the layout on submit.
+    @Published private(set) var runningBlock: CommandBlock? {
+        didSet {
+            runningVisibleTask?.cancel()
+            if runningBlock == nil {
+                runningVisible = false
+            } else if oldValue == nil {
+                runningVisibleTask = Task { [weak self] in
+                    try? await Task.sleep(for: .milliseconds(160))
+                    guard !Task.isCancelled, let self, self.runningBlock != nil else { return }
+                    self.runningVisible = true
+                    // The terminal only takes the keyboard once it is actually
+                    // on screen, so the composer keeps focus for the quick
+                    // commands that never reach this point.
+                    self.focusTerminal()
+                }
+            }
+        }
+    }
+    /// True once a running command has lasted long enough to be worth showing
+    /// live, rather than just letting it finish into a block.
+    @Published private(set) var runningVisible = false
+    private var runningVisibleTask: Task<Void, Never>?
     @Published var selectedBlockID: CommandBlock.ID?
     /// True once the shell has sent a marker, i.e. the integration is live.
     @Published private(set) var isIntegrationActive = false
@@ -237,7 +263,11 @@ final class BlockTracker: ObservableObject {
         // holds focus, but if any ever do they would silently prefix the
         // command, and that failure is invisible until the shell rejects it.
         view.send(txt: "\u{15}" + command + "\n")
-        focusTerminal()
+        // Focus is not handed to the terminal here: the composer stays put and
+        // keeps the keyboard, so a quick command never disturbs it. The
+        // terminal takes over only once the command has run long enough to be
+        // shown live (see runningBlock's didSet) or a full-screen program takes
+        // the alternate screen.
     }
 
     /// Gives the keyboard to the terminal, for a command that is starting or a
@@ -614,7 +644,6 @@ final class BlockTracker: ObservableObject {
     /// about to start.
     private func beginOutput() {
         isSubmitting = false
-        focusTerminal()
         commandDepth += 1
         watchForSubshell(command: pendingCommand ?? "")
 

@@ -267,7 +267,7 @@ struct BlockStack<Terminal: View>: View {
                 // full-width background as a band beneath the card.
                 liveBlock(viewport: proxy.size.height)
                     .frame(height: showsBlocks
-                        ? (tracker.runningBlock == nil ? 0 : runningHeight(viewport: proxy.size.height))
+                        ? (tracker.runningVisible ? runningHeight(viewport: proxy.size.height) : 0)
                         : nil)
             }
             .overlay(alignment: .top) {
@@ -289,10 +289,14 @@ struct BlockStack<Terminal: View>: View {
                 if !submitting { editorFocusRequests += 1 }
             }
             .animation(.easeOut(duration: 0.2), value: store.searchVisible)
-            .animation(.easeOut(duration: 0.2), value: tracker.runningBlock?.id)
+            .animation(.easeOut(duration: 0.2), value: tracker.runningVisible)
             .animation(.easeOut(duration: 0.18), value: historyOpen)
             .overlay(alignment: .bottom) {
-                if showsBlocks, tracker.runningBlock == nil, !tracker.isSubmitting {
+                // Stays put through a quick command instead of fading out and
+                // back — it only yields to the live terminal once a command has
+                // run long enough to be shown. That is what stopped the input
+                // bar flickering on every submit.
+                if showsBlocks, !tracker.runningVisible {
                     VStack(spacing: 0) {
                         if historyOpen, !historyWindow.isEmpty {
                             historyPalette
@@ -416,7 +420,7 @@ struct BlockStack<Terminal: View>: View {
                 // append or trim from the front, so count captures every change
                 // without allocating an array of every id each render.
                 .animation(.easeOut(duration: 0.22), value: tracker.blocks.count)
-                .padding(.bottom, tracker.runningBlock == nil && !tracker.isSubmitting ? composerHeight : 0)
+                .padding(.bottom, tracker.runningVisible ? 0 : composerHeight)
             }
             // Blocks stack up from the bottom, so they meet the prompt sitting
             // just below them instead of leaving a gap in a fresh session.
